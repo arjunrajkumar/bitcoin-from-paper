@@ -1,17 +1,10 @@
 # Bitcoin from Paper
 
-A Ruby on Rails implementation of the ideas in the Bitcoin whitepaper, built incrementally from the paper and early mailing-list and forum discussions.
+I'm looking to build Bitcoin, without looking at the source code of Bitcoin. So, I'll build it out by looking at the Bitcoin paper, the early forum posts, the cryptography mailing list posts, and by chatting with GPT-6 Astra.
 
-The goal is a working prototype whose parts fit together: transactions, blocks, proof of work, peer communication, and agreement on a transaction history. We prioritize understandable code and correct behavior over performance.
+The goal is to get a deep understanding of how Bitcoin works. The idea is to first build it out using my solutions, then improve it by looking at the actual Bitcoin code.
 
-## Approach
-
-- Build in small, agreed steps, discussing each part before implementing it.
-- Use the whitepaper and early discussions as references, without reading or reusing Bitcoin implementation source code.
-- Make our own implementation choices explicit where the references leave details open.
-- Verify meaningful behavior as the prototype grows.
-
-Compatibility with the existing Bitcoin network is not currently a goal.
+<a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
 
 ## Current state
 
