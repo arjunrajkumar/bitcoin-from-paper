@@ -15,7 +15,7 @@ class TransactionTest < ActiveSupport::TestCase
     assert_nil transaction.reload.input_count
   end
 
-  test "stores the public key and digital signature without a block" do
+  test "stores the public key and digital signature" do
     transaction = Transaction.create!(
       public_key: "receiver-public-key",
       digital_signature: "sender-digital-signature",
@@ -27,23 +27,13 @@ class TransactionTest < ActiveSupport::TestCase
 
     assert_equal "receiver-public-key", transaction.public_key
     assert_equal "sender-digital-signature", transaction.digital_signature
-    assert_nil transaction.block
   end
 
-  test "stores the public key and digital signature with a block" do
-    block = Block.create!
-    transaction = block.transactions.create!(
-      public_key: "another-receiver-public-key",
-      digital_signature: "another-sender-digital-signature",
-      receiver_output_value: "2",
-      input_transaction_ids: [transactions(:first_previous).id]
-    )
+  test "keeps only transaction data in the prototype" do
+    domain_tables = ApplicationRecord.connection.tables - %w[schema_migrations ar_internal_metadata]
 
-    transaction.reload
-
-    assert_equal "another-receiver-public-key", transaction.public_key
-    assert_equal "another-sender-digital-signature", transaction.digital_signature
-    assert_equal block, transaction.block
+    assert_equal ["transactions"], domain_tables.sort
+    assert_not_includes Transaction.column_names, "block_id"
   end
 
   test "updates the public key and signature independently" do

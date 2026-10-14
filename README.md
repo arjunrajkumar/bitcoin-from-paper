@@ -6,9 +6,9 @@ The goal is to get a deep understanding of how Bitcoin works. By first building 
 
 <a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
 
-## Learning notes
+## Background knowledge
 
-- [Transactions: initial understanding and error correction](docs/transactions.md)
+[Building my background knowledge on Weightless](https://weightlessapps.com/background-knowledge): dated model diagrams and short notes as my understanding changes.
 
 ## References
 
