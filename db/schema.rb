@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_000006) do
   create_table "blocks", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -20,6 +20,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_000002) do
     t.integer "block_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.text "public_key"
+    t.text "digital_signature"
+    t.integer "input_count"
+    t.decimal "receiver_output_value", precision: 20, scale: 8
+    t.json "input_transaction_ids", default: []
     t.index ["block_id"], name: "index_transactions_on_block_id"
   end
 

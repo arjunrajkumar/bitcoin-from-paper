@@ -1,0 +1,16 @@
+# These records represent stored transactions from before the step under test.
+# The rule for creating the first transaction has not been defined yet.
+first_previous:
+  public_key: first-owner-public-key
+  digital_signature: first-sender-signature
+  receiver_output_value: 5
+
+second_previous:
+  public_key: second-owner-public-key
+  digital_signature: second-sender-signature
+  receiver_output_value: 3
+
+third_previous:
+  public_key: third-owner-public-key
+  digital_signature: third-sender-signature
+  receiver_output_value: 1
