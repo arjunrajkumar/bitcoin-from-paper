@@ -70,41 +70,9 @@ class TransactionTest < ActiveSupport::TestCase
   test "stores the receiver output value as a decimal amount" do
     previous = transactions(:first_previous)
     ["12.34567890", "0", "0.00000001"].each do |value|
-      previous.update!(receiver_output_value: value)
       transaction = Transaction.create!(public_key: "receiver-public-key", receiver_output_value: value, input_transaction_ids: [previous.id])
 
       assert_equal BigDecimal(value), transaction.reload.receiver_output_value
-    end
-  end
-
-  test "does not create a transaction when the receiver value exceeds the input value" do
-    previous = transactions(:first_previous)
-    previous.update!(receiver_output_value: "2")
-    transaction = Transaction.new(public_key: "receiver-public-key", receiver_output_value: "5", input_transaction_ids: [previous.id])
-
-    assert_no_difference "Transaction.count" do
-      assert_not transaction.save
-    end
-
-    assert_equal ["Receiver output value must be less than or equal to total input value"], transaction.errors.full_messages
-  end
-
-  test "compares exact decimal values at and across the equality boundary" do
-    previous = transactions(:first_previous)
-    (0..3).each do |input_units|
-      previous.update!(receiver_output_value: BigDecimal(input_units) / 100_000_000)
-      (0..3).each do |output_units|
-        transaction = Transaction.new(
-          public_key: "receiver-public-key",
-          receiver_output_value: BigDecimal(output_units) / 100_000_000,
-          input_transaction_ids: [previous.id]
-        )
-        expected_to_save = input_units >= output_units
-
-        assert_equal expected_to_save, transaction.save
-        expected_errors = expected_to_save ? [] : ["Receiver output value must be less than or equal to total input value"]
-        assert_equal expected_errors, transaction.errors.full_messages
-      end
     end
   end
 
@@ -115,22 +83,6 @@ class TransactionTest < ActiveSupport::TestCase
       assert_not transaction.valid?
       assert_equal({ receiver_output_value: ["is not a number"] }, transaction.errors.to_hash)
     end
-  end
-
-  test "rejects non-finite receiver output values" do
-    [BigDecimal("NaN"), BigDecimal("Infinity"), BigDecimal("-Infinity")].each do |value|
-      transaction = Transaction.new(public_key: "receiver-public-key", receiver_output_value: value, input_transaction_ids: [transactions(:first_previous).id])
-
-      assert_not transaction.valid?
-      assert_equal({ receiver_output_value: ["must be finite"] }, transaction.errors.to_hash)
-    end
-  end
-
-  test "runs the value checks on creation only" do
-    transaction = Transaction.create!(public_key: "receiver-public-key", receiver_output_value: "2", input_transaction_ids: [transactions(:first_previous).id])
-
-    assert transaction.update(receiver_output_value: "6")
-    assert_equal BigDecimal("6"), transaction.reload.receiver_output_value
   end
 
   test "requires a public key when creating a transaction" do

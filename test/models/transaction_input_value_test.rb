@@ -40,11 +40,9 @@ class TransactionInputValueTest < ActiveSupport::TestCase
     transaction = build_transaction(input_transaction_ids: [previous_id, previous_id], receiver_output_value: "6")
 
     assert_equal BigDecimal("5"), transaction.total_input_value
-    assert_not transaction.save
-    assert_equal ["Receiver output value must be less than or equal to total input value"], transaction.errors.full_messages
   end
 
-  test "rejects creation when a referenced receiver value is missing or stored as null" do
+  test "returns no total when a referenced receiver value is missing or stored as null" do
     previous = transactions(:first_previous)
     [nil, BigDecimal("NaN")].each do |value|
       previous.update!(receiver_output_value: value)
@@ -52,19 +50,6 @@ class TransactionInputValueTest < ActiveSupport::TestCase
 
       assert_nil previous.reload.receiver_output_value
       assert_nil transaction.total_input_value
-      assert_not transaction.save
-      assert_equal({ total_input_value: ["is not a number"] }, transaction.errors.to_hash)
-    end
-  end
-
-  test "rejects creation when the calculated total is not finite" do
-    previous = transactions(:first_previous)
-    [BigDecimal("Infinity"), BigDecimal("-Infinity")].each do |value|
-      previous.update!(receiver_output_value: value)
-      transaction = build_transaction(input_transaction_ids: [previous.id])
-
-      assert_not transaction.save
-      assert_equal({ total_input_value: ["must be finite"] }, transaction.errors.to_hash)
     end
   end
 
@@ -72,9 +57,6 @@ class TransactionInputValueTest < ActiveSupport::TestCase
     transaction = build_transaction(input_transaction_ids: [transactions(:first_previous).id, -1])
 
     assert_raises(ActiveRecord::RecordNotFound) { transaction.total_input_value }
-    assert_no_difference "Transaction.count" do
-      assert_raises(ActiveRecord::RecordNotFound) { transaction.save }
-    end
   end
 
   private

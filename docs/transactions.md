@@ -63,6 +63,16 @@ I'll keep my original answers so I can see how my understanding changes. For eac
 
 ## Build steps
 
+### Keep only attribute validation — 14 October 2026
+
+- The user asked to remove `inputs_belong_to_same_sender`, `input_value_covers_receiver_output_value` and `digital_signature_matches_input_public_keys`, their validation calls and their related tests. The user also authorised committing this change.
+- Keep the three creation checks exactly as requested: presence of `input_transaction_ids`, presence of `public_key`, and numericality of `receiver_output_value`.
+- Keep the `total_input_value` calculation and its tests. It runs only when called, not during creation. Missing input records can therefore be stored in the list; an explicit total calculation still raises `ActiveRecord::RecordNotFound` for them.
+- Remove the input/output comparison tests and custom non-finite-value rejection tests. Remove creation-rejection assertions from tests that also cover the retained total calculation. Keep storage tests and the three attribute-validation checks.
+- Full transaction verification and the decision about where it belongs remain deferred. This change does not add a wallet or move the checks elsewhere.
+- Before implementation, the retained decimal-storage test failed as expected because the old comparison still rejected the stored receiver value (seed 21935). After removal, `bin/rails test` passed all 20 remaining tests / 79 assertions (seed 34322). The stored attributes, three retained checks and calculated-total behavior remain covered.
+- The scoped diff and `git diff --check` passed review. No migration was needed. The user authorised this local commit; no push or deployment was requested.
+
 ### Remove the saved-input validation — 14 October 2026
 
 - The user asked to remove `validate :input_transactions_are_saved, on: :create`. Remove both the callback and its method, including its integer-list and record-existence checks.
