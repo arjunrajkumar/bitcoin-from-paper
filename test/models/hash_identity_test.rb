@@ -27,10 +27,10 @@ class HashIdentityTest < ActiveSupport::TestCase
 
   test "transaction and block hashes match independent fixed vectors" do
     transaction = Transaction.create!(transaction_attributes)
-    assert_equal "ab37591adbe53d5dd47c342ec54ac422ebaa50cdbb34da2cd4fea3f212c44c9d", transaction.reload.id
+    assert_equal "2403b87eedacb26b2c96abfa822466e2100f2bb597c1285dbf5406018861944b", transaction.reload.id
     block = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30))
-    assert_equal "2fd75ced97893587046b0ea5248ebbda55cdc64fe5553e7f359278903639af40", block.transactions_hash
-    assert_equal "7348e59197762b6ec0d5e8ebb5db8916609d8247d7e01c1704f614194f1a9134", block.reload.id
+    assert_equal "8b9e0c19ccee6aa6caa92a2b44926a3017d6d6d1bb763e5f3f93e3a645df60fe", block.transactions_hash
+    assert_equal "81f490ed27f4cf5f5a55d595e5192feac1f336baed9b209785f5feb2dfd5c447", block.reload.id
     assert_equal block.id, block.calculate_header_hash
     assert_equal 0, block.height
     assert_nil block.previous_header_hash
@@ -91,11 +91,11 @@ class HashIdentityTest < ActiveSupport::TestCase
     node = Node.create!
     candidate = CandidateBlock.create!
     changes = [
-      [transaction, { public_key: "changed", block_id: block.id }],
-      [transaction, { digital_signature: "changed" }],
-      [transaction, { input_count: 2 }],
-      [transaction, { receiver_output_value: "3" }],
-      [transaction, { input_transaction_ids: ["b" * 64] }],
+      [transaction, transaction_attributes(public_key: "changed").slice(:outputs).merge(block_id: block.id)],
+      [transaction, transaction_attributes(signature: "changed").slice(:inputs)],
+      [transaction, transaction_attributes(output_index: 1).slice(:inputs)],
+      [transaction, transaction_attributes(value: "3").slice(:outputs)],
+      [transaction, transaction_attributes(previous_id: "b" * 64).slice(:inputs)],
       [transaction, { id: "f" * 64 }],
       [block, { header: { "transactions_hash" => "f" * 64 } }],
       [block, { height: 5 }],
@@ -138,15 +138,16 @@ class HashIdentityTest < ActiveSupport::TestCase
   end
 
   test "hash references reject malformed values but retain later-step spending cases" do
-    [nil, [], "a" * 64, [1], ["abc"], ["A" * 64], [nil]].each do |inputs|
-      transaction = Transaction.new(transaction_attributes.merge(input_transaction_ids: inputs))
+    [nil, [], 1, "abc", "A" * 64].each do |hash|
+      transaction = Transaction.new(transaction_attributes(previous_id: hash))
       assert_not transaction.save
-      expected = inputs.nil? || inputs == [] ? "Input transaction ids can't be blank" : "Input transaction ids must be an array of lowercase 64-character hashes"
-      assert_equal [expected], transaction.errors.full_messages
+      assert_equal ["Inputs item 0 previous_transaction_id must be a lowercase 64-character hash"], transaction.errors.full_messages
     end
-    transaction = Transaction.create!(transaction_attributes.merge(input_transaction_ids: ["b" * 64, "b" * 64], receiver_output_value: "-1"))
-    assert_equal ["b" * 64, "b" * 64], transaction.reload.input_transaction_ids
-    assert_equal BigDecimal("-1"), transaction.receiver_output_value
+    attributes = transaction_attributes(previous_id: "b" * 64, value: "-1")
+    attributes[:inputs] *= 2
+    transaction = Transaction.create!(attributes)
+    assert_equal ["b" * 64, "b" * 64], transaction.reload.inputs.map { |input| input.fetch("previous_transaction_id") }
+    assert_equal "-1.0", transaction.outputs.first.fetch("value")
   end
 
   test "invalid identity seeds fail without creating records" do
@@ -161,9 +162,9 @@ class HashIdentityTest < ActiveSupport::TestCase
 
   test "nonfinite output values cannot enter the hash format" do
     [BigDecimal("NaN"), BigDecimal("Infinity"), BigDecimal("-Infinity")].each do |value|
-      transaction = Transaction.new(transaction_attributes.merge(receiver_output_value: value))
+      transaction = Transaction.new(transaction_attributes(value: value))
       assert_not transaction.save
-      assert_equal ["Receiver output value must be finite"], transaction.errors.full_messages
+      assert_equal ["Outputs item 0 value must be a finite number"], transaction.errors.full_messages
     end
   end
 
@@ -172,12 +173,12 @@ class HashIdentityTest < ActiveSupport::TestCase
     values = ["0", "-0", "0.00000001", "-0.00000001", "999999999999.99999999", "1.234567895"]
     values += Array.new(40) { format("%d.%08d", random.rand(-1000..1000), random.rand(0..99_999_999)) }
     values.each_with_index do |value, index|
-      attributes = transaction_attributes.merge(receiver_output_value: value, public_key: "key-#{index}-£", input_count: index)
+      attributes = transaction_attributes(value: value, public_key: "key-#{index}-£", output_index: index)
       transaction = Transaction.create!(attributes).reload
-      amount = transaction.receiver_output_value
+      amount = BigDecimal(transaction.outputs.first.fetch("value"))
       assert_equal BigDecimal(value).round(8), amount
       decimal = amount.zero? ? "0.0" : amount.to_s("F")
-      payload = ["transaction", ["a" * 64], index, decimal, "key-#{index}-£", "sender-signature"]
+      payload = ["transaction", [["a" * 64, index, "sender-signature"]], [[decimal, "OP_CHECKSIG", "key-#{index}-£"]]]
       expected = Digest::SHA256.hexdigest(Digest::SHA256.digest(JSON.generate(payload)))
       assert_equal expected, transaction.id, "Hash must match persisted content for #{value}"
       assert amount.finite?
@@ -187,20 +188,11 @@ class HashIdentityTest < ActiveSupport::TestCase
   test "each transaction field and ordered input list affects the hash" do
     base = Transaction.create!(transaction_attributes)
     variants = [
-      { input_transaction_ids: ["b" * 64] }, { input_count: 2 },
-      { receiver_output_value: "2.126" }, { public_key: "other" }, { digital_signature: "other" },
-      { digital_signature: nil }, { input_count: nil },
-      { input_transaction_ids: ["a" * 64, "b" * 64] },
-      { input_transaction_ids: ["b" * 64, "a" * 64] }
-    ].map { |attributes| Transaction.create!(transaction_attributes.merge(attributes)) }
-    assert_equal 10, ([base] + variants).map(&:id).uniq.length
-    same = Transaction.new(transaction_attributes.merge(receiver_output_value: "2.12500000"))
+      { previous_id: "b" * 64 }, { output_index: 1 }, { value: "2.126" },
+      { public_key: "other" }, { signature: "other" }, { signature: "" }
+    ].map { |attributes| Transaction.create!(transaction_attributes(**attributes)) }
+    assert_equal 7, ([base] + variants).map(&:id).uniq.length
+    same = Transaction.new(transaction_attributes(value: "2.12500000"))
     assert_raises(ActiveRecord::RecordNotUnique) { same.save! }
-  end
-
-  private
-
-  def transaction_attributes
-    { input_transaction_ids: ["a" * 64], input_count: 1, receiver_output_value: "2.125", public_key: "receiver-public-key", digital_signature: "sender-signature" }
   end
 end

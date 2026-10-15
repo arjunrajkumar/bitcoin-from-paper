@@ -1,69 +1,38 @@
 require "test_helper"
 
 class TransactionInputListTest < ActiveSupport::TestCase
-  test "stores one input ID without changing the previous transaction" do
+  test "stores one input without changing the previous transaction" do
     previous = transactions(:first_previous)
-    previous_attributes = previous.attributes
-    transaction = build_transaction(input_transaction_ids: [previous.id])
-
-    assert_difference "Transaction.count", 1 do
-      transaction.save!
-    end
-
-    assert_equal [previous.id], transaction.reload.input_transaction_ids
-    assert_equal previous_attributes, previous.reload.attributes
+    before = previous.attributes.deep_dup
+    transaction = Transaction.new(transaction_attributes(previous_id: previous.id))
+    assert_difference("Transaction.count", 1) { transaction.save! }
+    assert_equal [previous.id], transaction.reload.inputs.map { |input| input.fetch("previous_transaction_id") }
+    assert_equal before, previous.reload.attributes
   end
 
-  test "stores three input IDs in their supplied order" do
-    previous_transactions = [transactions(:third_previous), transactions(:first_previous), transactions(:second_previous)]
-    previous_attributes = previous_transactions.map(&:attributes)
-    previous_ids = previous_transactions.map(&:id)
-    transaction = build_transaction(input_transaction_ids: previous_ids)
-
-    assert_difference "Transaction.count", 1 do
-      transaction.save!
-    end
-
-    assert_equal previous_ids, transaction.reload.input_transaction_ids
-    assert_equal previous_attributes, previous_transactions.map { |previous| previous.reload.attributes }
+  test "stores three inputs in their supplied order" do
+    previous = [transactions(:third_previous), transactions(:first_previous), transactions(:second_previous)]
+    before = previous.map { |transaction| transaction.attributes.deep_dup }
+    inputs = previous.map { |transaction| transaction_attributes(previous_id: transaction.id).fetch(:inputs).first }
+    transaction = Transaction.new(transaction_attributes.merge(inputs: inputs))
+    assert_difference("Transaction.count", 1) { transaction.save! }
+    assert_equal previous.map(&:id), transaction.reload.inputs.map { |input| input.fetch("previous_transaction_id") }
+    assert_equal before, previous.map { |record| record.reload.attributes }
   end
 
-  test "stores the supplied list without removing repeated IDs" do
-    previous_id = transactions(:first_previous).id
-    transaction = build_transaction(input_transaction_ids: [previous_id, previous_id])
-    transaction.save!
-
-    assert_equal [previous_id, previous_id], transaction.reload.input_transaction_ids
-  end
-
-  test "requires at least one input ID on creation" do
-    [{}, { input_transaction_ids: nil }, { input_transaction_ids: [] }].each do |attributes|
-      transaction = build_transaction(**attributes)
-
-      assert_no_difference "Transaction.count" do
-        assert_not transaction.save
-      end
-
-      assert_equal ["Input transaction ids can't be blank"], transaction.errors.full_messages
-    end
+  test "stores repeated references until spending validation is implemented" do
+    input = transaction_attributes(previous_id: transactions(:first_previous).id).fetch(:inputs).first
+    transaction = Transaction.create!(transaction_attributes.merge(inputs: [input, input]))
+    assert_equal 2, transaction.reload.inputs.length
+    assert_equal transaction.inputs.first, transaction.inputs.last
   end
 
   test "failed creation leaves the previous transaction unchanged" do
     previous = transactions(:first_previous)
-    previous_attributes = previous.attributes
-    transaction = build_transaction(public_key: nil, input_transaction_ids: [previous.id])
-
-    assert_no_difference "Transaction.count" do
-      assert_not transaction.save
-    end
-
-    assert_equal ["Public key can't be blank"], transaction.errors.full_messages
-    assert_equal previous_attributes, previous.reload.attributes
-  end
-
-  private
-
-  def build_transaction(**attributes)
-    Transaction.new(public_key: "new-owner-public-key", receiver_output_value: "2", **attributes)
+    before = previous.attributes.deep_dup
+    transaction = Transaction.new(transaction_attributes(previous_id: previous.id, public_key: nil))
+    assert_no_difference("Transaction.count") { assert_not transaction.save }
+    assert_equal ["Outputs item 0 script_pub_key public_key must be a nonblank string"], transaction.errors.full_messages
+    assert_equal before, previous.reload.attributes
   end
 end

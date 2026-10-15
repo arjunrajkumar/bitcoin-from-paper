@@ -8,6 +8,52 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 <a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
 
+## Bitcoin Core comparison — Step 2, 15 October 2026
+
+On 15 October 2026, the user authorised starting Step 2 after publishing Step 1. After discussing Core's scripts and the separate coinbase maturity rule, the user chose **OP_CHECKSIG only for Step 2**. The user then accepted Step 2 and authorised its commit and push, plus publication of a fixed Step 2 diagram and highlighted personal note on Weightless. Preserve the earlier snapshots. Step 3 has not been authorised.
+
+Replace the old transaction-wide fields with two ordered JSON lists. Each input stores `previous_transaction_id`, a zero-based `output_index`, and `script_sig`. Each output stores `value` and `script_pub_key: { operation: "OP_CHECKSIG", public_key: "..." }`. The signature is an opaque string in `script_sig`; an empty string is allowed, as script verification is not implemented. Public keys remain nonblank strings, not validated cryptographic keys. These named data fields are a simulation format, not executable Bitcoin Script bytes.
+
+Input and output positions come from their list order. They have no independent database IDs. Remove `input_transaction_ids`, `input_count`, `receiver_output_value`, `public_key` and `digital_signature` columns. A transaction hash covers all ordered input and output contents, including proofs and conditions. Keep saved content immutable and block assignment editable. Output values use exact decimal strings in JSON with the existing eight-place rounding and zero normalization. Input references require a 64-character lowercase hash and an integer position from 0 through 4,294,967,295. Reject malformed list items, unknown fields, unsupported operations and nonfinite amounts.
+
+The new hash payload is `["transaction", [[previous_transaction_id, output_index, script_sig], ...], [[value, operation, public_key], ...]]`. Object key order does not affect this fixed array format. An output is identified across transactions by its transaction hash plus its position.
+
+Verify single and multiple inputs/outputs, separate references to outputs 0 and 1, retained source records, exact values, changed content/order changing the hash, rejected edits and atomic failures through direct creation, node creation and block associations. Retain all guessing, candidate, broadcast and hash-identity checks. A new migration must refuse existing transactions or blocks before replacing the empty transaction table; nodes and candidates remain intact.
+
+This step stores the structure only. Repeated references, missing previous outputs and negative values remain accepted until Step 4. No output is marked spent. The unspent-output set, balance checks, signature verification, wallet, script engine, height locks, coinbase creation and coinbase maturity are not added. Core's coinbase waiting period is a separate consensus check, not an alternative to ownership proof; its exact simulation scope will be discussed with the coinbase work.
+
+The six initial structure tests first failed because `Transaction` has no `inputs` attribute (six errors, seed 38016). This is the expected missing-structure result. The accepted Step 1 baseline is `3130526a20891f363f094c5cd773f3b4bd856215`, with 76 tests / 1,055 assertions. Development has zero records in all four domain tables before the new migration.
+
+Each output names its check and the key used for that check. For example, `{ operation: "OP_CHECKSIG", public_key: "alice-public-key" }` means that spending will require a valid signature for Alice's public key. Step 2 stores that rule without checking the signature. `SCRIPT_FIELDS` lists the two required field names; it does not store the rule's values. With only one allowed operation, the operation could be fixed in code. Keeping it explicit makes the stored condition clear.
+
+This current example shows two outputs and a later reference to the second output. The first reference is a placeholder because first-transaction creation and checks for missing outputs are later steps. These calls store data; they do not establish valid spending.
+
+```ruby
+source = Transaction.create!(
+  inputs: [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "prior-proof" }],
+  outputs: [
+    { value: "3", script_pub_key: { operation: "OP_CHECKSIG", public_key: "alice-public-key" } },
+    { value: "2", script_pub_key: { operation: "OP_CHECKSIG", public_key: "bob-public-key" } }
+  ]
+)
+
+later = Transaction.create!(
+  inputs: [{ previous_transaction_id: source.id, output_index: 1, script_sig: "bob-signature" }],
+  outputs: [{ value: "2", script_pub_key: { operation: "OP_CHECKSIG", public_key: "carol-public-key" } }]
+)
+```
+
+Verification on 15 October 2026:
+
+- `mise exec ruby@3.4.5 -- bin/rails test` passed 87 tests / 1,395 assertions (seed 19113). `mise exec ruby@3.4.5 -- bin/rails zeitwerk:check` passed. Coverage includes separate references to outputs 0 and 1, all supported creation paths, exact validation errors, saved-content protection, independent hash examples and retained model behaviour.
+- A validation test found that `[nil]` was classified as an empty list. The implementation now checks whether the list is empty, then reports the invalid item. The test assertion was unchanged.
+- Generated list checks cover nine combinations of one, two or five inputs and outputs, with amount seed `15102027`. Positions include zero, one and 4,294,967,295. The retained decimal checks cover six boundaries and 40 generated values with seed `15102026`. These finite samples do not prove all inputs or concurrent behaviour.
+- Migration checks cover refusal with transactions, blocks or both present; preservation of nodes and candidates; irreversible rollback; and loading the SQL structure with its constraints and eight triggers. Development and test were migrated from empty transaction and block tables. No populated records were converted.
+- A local console check created two outputs, then read output 1 through a later input. It returned Bob's key and the exact value `"2.0"`. The check rolled back all writes; all four development tables remained empty. Both local servers returned HTTP 200, and `git diff --check` passed. The final changes after the test run were documentation and removal of a generated blank line in the SQL dump; the full suite was not repeated for those edits.
+- At the end of local verification, Step 2 was uncommitted and no website files or fixed diagrams had changed. The user subsequently accepted and authorised publication as recorded above. The unspent-output set and spending checks remain later steps.
+
+Rollback requires the Step 1 code and a matching database backup. The ignored local backups are `tmp/transaction-structure-baseline/development.sqlite3` and `tmp/transaction-structure-baseline/test.sqlite3`. Stop the local server before restoring either database. Preserve any data created after migration before restoring a backup.
+
 ## Bitcoin Core comparison — Step 1, 15 October 2026
 
 The user approved Step 1 only: replace integer database identities with hashes, test it, and show fixed before/after diagrams on the local Weightless timeline. Both repositories were kept uncommitted for review. On 15 October 2026, the user accepted the result and authorised committing and publishing both repositories, deploying the Weightless page, then starting Step 2. Each numbered step remains separate. Step 2 still requires agreement on spending-condition and proof representation before implementation.

@@ -1,19 +1,16 @@
-# These records represent stored transactions from before the step under test.
-# The rule for creating the first transaction has not been defined yet.
+# These test records refer to an external placeholder transaction.
+# Coinbase creation and checks for missing previous outputs are later steps.
 first_previous:
-  id: 622dd4ce9becb208285ab79ac9cab7ad1ffdbc6d68e47fd94d69f822fc584a04
-  public_key: first-owner-public-key
-  digital_signature: first-sender-signature
-  receiver_output_value: 5
+  id: bd0cfc70976d1d08dad86973dfb371e06b3051aaab33db2dbde88c39509cf205
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "first-sender-signature" }].to_json.inspect %>
+  outputs: <%= [{ value: "5.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "first-owner-public-key" } }].to_json.inspect %>
 
 second_previous:
-  id: a6a02b4109b0676e5201da5513eadb19459ad2c818e5dde0427908833724af02
-  public_key: second-owner-public-key
-  digital_signature: second-sender-signature
-  receiver_output_value: 3
+  id: 4ec3d77d79e482322fb8b6b0c06f6ebb775cdd79a4e37e82af64758adcb865af
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "second-sender-signature" }].to_json.inspect %>
+  outputs: <%= [{ value: "3.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "second-owner-public-key" } }].to_json.inspect %>
 
 third_previous:
-  id: 57d2fe7dad71227067ba879079826cd18b13f6393674a153f5e1b63de3e0870b
-  public_key: third-owner-public-key
-  digital_signature: third-sender-signature
-  receiver_output_value: 1
+  id: b1da14c74f8bdb7c317749fc8a30cc49608b85b1425138d480b160da0fc1d2b8
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "third-sender-signature" }].to_json.inspect %>
+  outputs: <%= [{ value: "1.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "third-owner-public-key" } }].to_json.inspect %>

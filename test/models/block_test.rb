@@ -55,7 +55,7 @@ class BlockTest < ActiveSupport::TestCase
   test "later transactions and calculations do not rebuild the saved header or identity" do
     block = Block.create!
     stored = block.reload.attributes
-    later = Transaction.create!(public_key: "later-owner", receiver_output_value: "1", input_transaction_ids: [transactions(:first_previous).id])
+    later = Transaction.create!(transaction_attributes(previous_id: transactions(:first_previous).id, value: "1", public_key: "later-owner"))
     block.save!
     assert_equal digest("transactions", (fixture_ids + [later.id]).sort), block.calculate_transactions_hash
     assert_equal stored, block.reload.attributes
@@ -140,15 +140,15 @@ class BlockTest < ActiveSupport::TestCase
   end
 
   test "a transaction may be created without a block" do
-    transaction = Transaction.create!(public_key: "receiver", receiver_output_value: "2", input_transaction_ids: [transactions(:first_previous).id])
+    transaction = Transaction.create!(transaction_attributes(previous_id: transactions(:first_previous).id, value: "2", public_key: "receiver"))
     assert_nil transaction.reload.block
     assert_nil transaction.block_id
   end
 
   test "both association creation paths use the block hash" do
     block = Block.create!
-    first = block.transactions.create!(public_key: "first-receiver", receiver_output_value: "2", input_transaction_ids: [transactions(:first_previous).id])
-    second = Transaction.create!(block: block, public_key: "second-receiver", receiver_output_value: "1", input_transaction_ids: [transactions(:second_previous).id])
+    first = block.transactions.create!(transaction_attributes(previous_id: transactions(:first_previous).id, value: "2", public_key: "first-receiver"))
+    second = Transaction.create!(transaction_attributes(previous_id: transactions(:second_previous).id, value: "1", public_key: "second-receiver").merge(block: block))
     assert_equal [first.id, second.id].sort, block.reload.transactions.order(:id).pluck(:id)
     [first, second].each do |transaction|
       assert_equal block, transaction.reload.block

@@ -13,10 +13,11 @@ class NodeTransactionTest < ActiveSupport::TestCase
     end
 
     assert transaction.persisted?
-    assert_equal "receiver-public-key", transaction.reload.public_key
-    assert_equal "sender-signature", transaction.digital_signature
-    assert_equal BigDecimal("2.125"), transaction.receiver_output_value
-    assert_equal [transactions(:first_previous).id], transaction.input_transaction_ids
+    assert_equal "receiver-public-key", transaction.reload.outputs.first.fetch("script_pub_key").fetch("public_key")
+    assert_equal "sender-signature", transaction.inputs.first.fetch("script_sig")
+    assert_equal "2.125", transaction.outputs.first.fetch("value")
+    assert_equal transactions(:first_previous).id, transaction.inputs.first.fetch("previous_transaction_id")
+    assert_equal 0, transaction.inputs.first.fetch("output_index")
     assert_nil transaction.block_id
     assert_equal [], receipts
   end
@@ -38,9 +39,9 @@ class NodeTransactionTest < ActiveSupport::TestCase
   test "creation keeps the existing transaction validation rules" do
     sender = Node.create!
     invalid_attributes = [
-      [{ public_key: nil }, "Public key can't be blank"],
-      [{ input_transaction_ids: [] }, "Input transaction ids can't be blank"],
-      [{ receiver_output_value: "not-a-number" }, "Receiver output value is not a number"]
+      [transaction_attributes(public_key: nil), "Outputs item 0 script_pub_key public_key must be a nonblank string"],
+      [{ inputs: [] }, "Inputs must be a non-empty array"],
+      [transaction_attributes(value: "not-a-number"), "Outputs item 0 value must be a finite number"]
     ]
 
     invalid_attributes.each do |attributes, expected_error|
@@ -124,7 +125,7 @@ class NodeTransactionTest < ActiveSupport::TestCase
     sender = Node.create!
     receiver = Node.create!
     first = sender.create_transaction(transaction_attributes)
-    second = sender.create_transaction(transaction_attributes.merge(receiver_output_value: "3"))
+    second = sender.create_transaction(transaction_attributes(value: "3"))
 
     saved_second = second.attributes
     receipts = capture_receipts { sender.broadcast_transaction(first) }
@@ -145,12 +146,7 @@ class NodeTransactionTest < ActiveSupport::TestCase
     Rails.logger = original_logger
   end
 
-  def transaction_attributes
-    {
-      public_key: "receiver-public-key",
-      digital_signature: "sender-signature",
-      receiver_output_value: "2.125",
-      input_transaction_ids: [transactions(:first_previous).id]
-    }
+  def transaction_attributes(**attributes)
+    super(previous_id: transactions(:first_previous).id, **attributes)
   end
 end
