@@ -14,15 +14,15 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 This step defines the values only. Coinbase creation, the timer, and checks that enforce the block range and total limit will be built in later agreed steps.
 
-## Our proof-of-work assumptions and method
+## Proof-of-work assumptions and method
 
-For our proof-of-work exercise, we choose a target number from 0 to 10, inclusive. Each node guesses once per round. We collect every guess, then check them in order. The first matching entry wins. If no guess matches, we choose a random node from that round.
+For the proof-of-work exercise, the program chooses a target number from 0 to 10, inclusive. Each node guesses once per round. The program collects every guess, then checks them in order. The first matching entry wins. If no guess matches, the program chooses a random node from that round.
 
-We control which nodes take part and run each round in one local program. A node can try again only after all nodes have guessed. This is our simulation rule, with no real hashing or CPU race. Network communication and connecting the winner to a block come later.
+The program controls which nodes take part and runs each round locally. A node can try again only after all nodes have guessed. This simulation uses no real hashing or CPU race. Network communication and connecting the winner to a block come later.
 
 `ProofOfWork#generate_number` chooses an integer from 0 through 10 inclusive and keeps it in that object's memory. `matches?(received_number)` returns true only for the matching integer. Checking a guess does not generate a new target. Before generation, every guess returns false. The shared number range is defined in `ProtocolRules`.
 
-The [whitepaper's Section 5](https://bitcoin.org/bitcoin.pdf) calls the participants nodes, including those finding proof of work. Our `Node` model stores an ID and Rails timestamps. `Node#guess` generates one integer in the same range. These are local records for our simulation.
+The [whitepaper's Section 5](https://bitcoin.org/bitcoin.pdf) calls the participants nodes, including those finding proof of work. The `Node` model stores an ID and Rails timestamps. `Node#guess` generates one integer in the same range. These are local records for the simulation.
 
 `ProofOfWork#find_winner` runs one round. It reads all saved nodes in ID order and collects one guess from each before checking any answer. The first matching entry wins. If no guess matches, it picks a random participant. With no participants, it returns `nil`. It requires a generated target and raises `ArgumentError` with `Generate a number before starting a round` if there is none.
 
