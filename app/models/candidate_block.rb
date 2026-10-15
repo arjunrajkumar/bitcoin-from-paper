@@ -1,0 +1,2 @@
+class CandidateBlock < ApplicationRecord
+end

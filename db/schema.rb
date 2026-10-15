@@ -10,16 +10,23 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_000014) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_000015) do
   create_table "blocks", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.json "header", default: {"transactions_hash" => nil, "created_at" => nil, "previous_header_hash" => nil}, null: false
   end
 
+  create_table "candidate_blocks", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "nodes", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "candidate_block_id"
+    t.index ["candidate_block_id"], name: "index_nodes_on_candidate_block_id"
   end
 
   create_table "transactions", force: :cascade do |t|
@@ -34,5 +41,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_000014) do
     t.index ["block_id"], name: "index_transactions_on_block_id"
   end
 
+  add_foreign_key "nodes", "candidate_blocks"
   add_foreign_key "transactions", "blocks"
 end

@@ -45,6 +45,22 @@ On 15 October 2026, the user requested direct transaction creation and removal o
 
 Revised checks first failed on the retained table, the dependency on a saved node, and the missing receipt messages (17 tests / 72 assertions, five failures and one error, seed 64939). The final `mise exec ruby@3.4.5 -- bin/rails test` run passed 53 tests / 432 assertions (seed 57972). Checks cover direct creation, existing validation failures, separate broadcast, receipt by all other nodes, repeated calls, later nodes, no other nodes, and broadcasting only the selected transaction. Rails loading and whitespace checks passed. Real network delivery and concurrent broadcasts were not tested.
 
+## One candidate block per node
+
+Each node has one optional `candidate_block` reference to a separate `CandidateBlock`, stored in `nodes.candidate_block_id`. A node starts without a candidate. Assigning another candidate replaces the reference; clearing it leaves the candidate records intact. The database requires a supplied reference to point to an existing candidate block.
+
+```ruby
+candidate = CandidateBlock.create!
+node.update!(candidate_block: candidate)
+node.candidate_block
+```
+
+This step adds the separate model and relationship only. `CandidateBlock` stores an ID and timestamps. It does not inherit from `Block`, build a header, link to a previous block, or collect transactions yet. Creating a node does not create a candidate automatically.
+
+On 15 October 2026, replaced the earlier uncommitted reference to `Block` with the separate candidate model. Development and test had no saved nodes or candidate assignments. Rolled back the earlier migration in both databases before replacing it with `20261015000015_create_candidate_blocks.rb`. Revised checks first failed because the separate model and table were missing, and the old relationship still accepted a regular block (15 tests / 35 assertions, two failures and five errors, seed 15964).
+
+Applied the new migration in development and test. All 59 tests / 463 assertions passed (seed 6484). Checks cover separate candidate records, optional assignment, replacement, clearing, and rejection of regular blocks or missing candidate IDs. Rails loading and whitespace checks passed.
+
 ## Proof-of-work assumptions and method
 
 For the proof-of-work exercise, the program chooses a target number from 0 to 10, inclusive. Each node guesses once per round. The program collects every guess, then checks them in order. The first matching entry wins. If no guess matches, the program chooses a random node from that round.

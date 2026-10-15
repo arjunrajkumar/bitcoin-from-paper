@@ -1,4 +1,6 @@
 class Node < ApplicationRecord
+  belongs_to :candidate_block, optional: true
+
   def create_transaction(attributes)
     Transaction.create!(attributes)
   end
