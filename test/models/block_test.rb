@@ -7,7 +7,7 @@ class BlockTest < ActiveSupport::TestCase
     assert_empty block.reload.transactions
   end
 
-  test "stores only the current block and its header" do
+  test "keeps block links inside the header without separate hash columns" do
     assert_equal ["created_at", "header", "id", "updated_at"], Block.column_names.sort
     assert_equal ["transactions"], Block.reflections.keys
     assert_empty Block.connection.foreign_keys(:blocks)
@@ -18,8 +18,9 @@ class BlockTest < ActiveSupport::TestCase
 
     assert_nil block.created_at
     assert_nil block.transactions_hash
-    assert_equal({"transactions_hash" => nil, "created_at" => nil}, block.header)
-    assert_equal({"transactions_hash" => nil, "created_at" => nil}, block.calculate_header_hash)
+    assert_nil block.previous_header_hash
+    assert_equal({"transactions_hash" => nil, "created_at" => nil, "previous_header_hash" => nil}, block.header)
+    assert_equal({"transactions_hash" => nil, "created_at" => nil, "previous_header_hash" => nil}, block.calculate_header_hash)
   end
 
   test "records the block creation time in its header" do
@@ -28,7 +29,7 @@ class BlockTest < ActiveSupport::TestCase
       expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
 
       assert_equal Time.utc(2026, 10, 15, 10, 30, 0), block.created_at
-      assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}, block.header)
+      assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}, block.header)
       assert_equal expected_ids, block.calculate_transactions_hash
     end
   end
@@ -48,7 +49,7 @@ class BlockTest < ActiveSupport::TestCase
 
     assert_equal recorded_time, block.created_at
     assert_equal [potential_transaction.id], block.calculate_transactions_hash
-    assert_equal({"transactions_hash" => [potential_transaction.id], "created_at" => "2026-10-15T10:30:00.123456Z"}, block.header)
+    assert_equal({"transactions_hash" => [potential_transaction.id], "created_at" => "2026-10-15T10:30:00.123456Z", "previous_header_hash" => nil}, block.header)
     assert_equal block, assigned_transaction.reload.block
     assert_nil potential_transaction.reload.block
   end
@@ -57,7 +58,7 @@ class BlockTest < ActiveSupport::TestCase
     expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
     block = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30, 0))
 
-    expected_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}
+    expected_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}
     assert_equal expected_header, block.reload.header
     assert_empty block.transactions
 
@@ -81,7 +82,7 @@ class BlockTest < ActiveSupport::TestCase
     expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
 
     assert_equal expected_ids, block.calculate_transactions_hash
-    assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}, block.calculate_header_hash)
+    assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}, block.calculate_header_hash)
     assert_equal stored_values, block.reload.attributes
   end
 
@@ -105,7 +106,7 @@ class BlockTest < ActiveSupport::TestCase
 
     assert_empty block.potential_transactions
     assert_equal [], block.calculate_transactions_hash
-    assert_equal({"transactions_hash" => [], "created_at" => "2026-10-15T10:30:00.000000Z"}, block.reload.header)
+    assert_equal({"transactions_hash" => [], "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}, block.reload.header)
   end
 
   test "later updates and calculations keep the original creation time" do
@@ -120,10 +121,10 @@ class BlockTest < ActiveSupport::TestCase
 
     assert_equal Time.utc(2026, 10, 15, 10, 30, 0), block.created_at
     assert_equal Time.utc(2026, 10, 16, 11, 0, 0), block.updated_at
-    assert_equal({"transactions_hash" => "T2", "created_at" => "2026-10-15T10:30:00.000000Z"}, block.header)
+    assert_equal({"transactions_hash" => "T2", "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}, block.header)
 
     travel_to Time.utc(2026, 10, 17) do
-      assert_equal({"transactions_hash" => "T2", "created_at" => "2026-10-15T10:30:00.000000Z"}, block.calculate_header_hash)
+      assert_equal({"transactions_hash" => "T2", "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}, block.calculate_header_hash)
     end
     assert_equal Time.utc(2026, 10, 16, 11, 0, 0), block.reload.updated_at
   end
@@ -135,6 +136,48 @@ class BlockTest < ActiveSupport::TestCase
 
     assert_equal({"transactions_hash" => "T2"}, block.reload.header)
     assert_equal Time.utc(2026, 10, 15, 10, 30, 0), block.created_at
+  end
+
+  test "links three blocks through their complete headers using the hash placeholder" do
+    expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
+    first = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30, 0))
+    second = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 40, 0))
+    third = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 50, 0))
+    first_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z", "previous_header_hash" => nil}
+    second_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:40:00.000000Z", "previous_header_hash" => first_header}
+    third_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:50:00.000000Z", "previous_header_hash" => second_header}
+
+    assert_equal first_header, first.reload.header
+    assert_equal second_header, second.reload.header
+    assert_equal third_header, third.reload.header
+    assert_equal first_header, second.previous_header_hash
+    assert_equal second_header, third.previous_header_hash
+    assert_equal third_header, third.calculate_header_hash
+  end
+
+  test "extends the last saved block even when creation times are out of order" do
+    first = Block.create!(created_at: Time.utc(2026, 10, 15))
+    second = Block.create!(created_at: Time.utc(2026, 10, 14))
+    third = Block.create!(created_at: Time.utc(2026, 10, 16))
+
+    assert_equal first.header, second.reload.previous_header_hash
+    assert_equal second.header, third.reload.previous_header_hash
+    refute_equal first.header, third.previous_header_hash
+  end
+
+  test "saved links stay unchanged when an earlier block changes or a later block arrives" do
+    first = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30, 0))
+    second = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 40, 0))
+    original_first_header = first.header.deep_dup
+
+    first.update!(transactions_hash: "changed")
+    third = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 50, 0))
+    second.update!(transactions_hash: "updated-second")
+
+    assert_equal original_first_header, second.reload.previous_header_hash
+    assert_equal original_first_header, third.reload.previous_header_hash.fetch("previous_header_hash")
+    refute_equal first.reload.header, second.previous_header_hash
+    refute_equal second.header, third.previous_header_hash
   end
 
   test "creates a transaction without a block" do

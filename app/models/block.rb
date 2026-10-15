@@ -1,5 +1,5 @@
 class Block < ApplicationRecord
-  store_accessor :header, :transactions_hash
+  store_accessor :header, :transactions_hash, :previous_header_hash
 
   has_many :transactions
 
@@ -25,5 +25,6 @@ class Block < ApplicationRecord
   def build_header
     header["transactions_hash"] = calculate_transactions_hash
     header["created_at"] = created_at&.utc&.iso8601(6)
+    header["previous_header_hash"] = Block.order(:id).last&.calculate_header_hash
   end
 end

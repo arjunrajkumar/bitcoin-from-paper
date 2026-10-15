@@ -10,11 +10,11 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_000012) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_000013) do
   create_table "blocks", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.json "header", default: {"transactions_hash" => nil, "created_at" => nil}, null: false
+    t.json "header", default: {"transactions_hash" => nil, "created_at" => nil, "previous_header_hash" => nil}, null: false
   end
 
   create_table "transactions", force: :cascade do |t|
