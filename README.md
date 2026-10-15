@@ -4,7 +4,23 @@ I'm looking to build Bitcoin, without looking at the source code of Bitcoin. So,
 
 The goal is to get a deep understanding of how Bitcoin works. By first building it out using my solutions, then finding the errors and improving it by looking at the actual Bitcoin code.
 
+For the first version, I'm building a simulation of blocks 0 through 1000. The plan is one block every 0.3 seconds, with a fixed reward of 50 bitcoins per block. That is 1,001 blocks over about five minutes, with a total limit of 50,050 simulated bitcoins.
+
 <a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
+
+## Rules for the planned simulation
+
+`app/models/protocol_rules.rb` defines these values. The total limit is calculated from the inclusive block range and fixed reward.
+
+This step defines the values only. Coinbase creation, the timer, and checks that enforce the block range and total limit will be built in later agreed steps.
+
+## Proof-of-work learning exercise
+
+`ProofOfWork#generate_number` chooses an integer from 0 through 10 inclusive and keeps it in that object's memory. `matches?(received_number)` returns true only for the matching integer. Checking a guess does not generate a new target. Before generation, every guess returns false. Call `generate_number` again to choose the target for another round.
+
+This is our simplified guessing exercise. It does not perform Bitcoin's hash-based proof-of-work or protect block contents. Sharing a target between nodes, choosing the first winner and connecting the result to a block are later steps. Nothing is saved to the database in this step.
+
+Verified on 15 October 2026: all 36 tests / 282 assertions passed (seed 24120), including all 121 target/guess pairs from 0 through 10, invalid guesses, checking before generation, and keeping the target unchanged during checks. Rails loading and whitespace checks passed.
 
 ## Current learning step: block headers
 
