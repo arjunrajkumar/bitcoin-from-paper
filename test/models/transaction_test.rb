@@ -29,11 +29,11 @@ class TransactionTest < ActiveSupport::TestCase
     assert_equal "sender-digital-signature", transaction.digital_signature
   end
 
-  test "keeps only transaction data in the prototype" do
+  test "stores blocks and transactions in the prototype" do
     domain_tables = ApplicationRecord.connection.tables - %w[schema_migrations ar_internal_metadata]
 
-    assert_equal ["transactions"], domain_tables.sort
-    assert_not_includes Transaction.column_names, "block_id"
+    assert_equal ["blocks", "transactions"], domain_tables.sort
+    assert_includes Transaction.column_names, "block_id"
   end
 
   test "updates the public key and signature independently" do
