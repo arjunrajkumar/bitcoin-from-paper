@@ -58,8 +58,7 @@ class NodeCandidateBlockTest < ActiveSupport::TestCase
 
   test "the database requires a candidate block even if a regular block has that id" do
     node = Node.create!
-    missing_candidate_id = CandidateBlock.maximum(:id).to_i + 1
-    Block.create!(id: missing_candidate_id)
+    missing_candidate_id = Block.create!.id
 
     assert_raises(ActiveRecord::InvalidForeignKey) do
       node.update_column(:candidate_block_id, missing_candidate_id)

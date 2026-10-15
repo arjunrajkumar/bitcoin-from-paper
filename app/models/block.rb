@@ -4,6 +4,7 @@ class Block < ApplicationRecord
   has_many :transactions
 
   before_create :build_header
+  include HashIdentity
 
   def potential_transactions
     # Receiving transactions from the network will be added later.
@@ -11,20 +12,30 @@ class Block < ApplicationRecord
   end
 
   def calculate_transactions_hash
-    # Hashing needs to be added later.
-    potential_transactions.map(&:id)
+    ContentHash.calculate("transactions", potential_transactions.map(&:id))
   end
 
   def calculate_header_hash
-    # Hashing needs to be added later.
-    header
+    ContentHash.calculate("block", transactions_hash, header["created_at"], previous_header_hash)
   end
 
   private
 
   def build_header
-    header["transactions_hash"] = calculate_transactions_hash
-    header["created_at"] = created_at&.utc&.iso8601(6)
-    header["previous_header_hash"] = Block.order(:id).last&.calculate_header_hash
+    previous = Block.order(:height).last
+    self.height = previous ? previous.height + 1 : 0
+    self.header = {
+      "transactions_hash" => calculate_transactions_hash,
+      "created_at" => created_at.utc.iso8601(6),
+      "previous_header_hash" => previous&.id
+    }
+  end
+
+  def calculate_id
+    calculate_header_hash
+  end
+
+  def identity_attributes
+    %w[header height]
   end
 end

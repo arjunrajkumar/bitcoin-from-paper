@@ -1,16 +1,19 @@
 # These records represent stored transactions from before the step under test.
 # The rule for creating the first transaction has not been defined yet.
 first_previous:
+  id: 622dd4ce9becb208285ab79ac9cab7ad1ffdbc6d68e47fd94d69f822fc584a04
   public_key: first-owner-public-key
   digital_signature: first-sender-signature
   receiver_output_value: 5
 
 second_previous:
+  id: a6a02b4109b0676e5201da5513eadb19459ad2c818e5dde0427908833724af02
   public_key: second-owner-public-key
   digital_signature: second-sender-signature
   receiver_output_value: 3
 
 third_previous:
+  id: 57d2fe7dad71227067ba879079826cd18b13f6393674a153f5e1b63de3e0870b
   public_key: third-owner-public-key
   digital_signature: third-sender-signature
   receiver_output_value: 1

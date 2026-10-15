@@ -36,7 +36,7 @@ class TransactionTest < ActiveSupport::TestCase
     assert_includes Transaction.column_names, "block_id"
   end
 
-  test "updates the public key and signature independently" do
+  test "saved public keys and signatures cannot change" do
     transaction = Transaction.create!(
       public_key: "original-public-key",
       digital_signature: "original-signature",
@@ -44,17 +44,13 @@ class TransactionTest < ActiveSupport::TestCase
       input_transaction_ids: [transactions(:first_previous).id]
     )
 
-    transaction.update!(public_key: "updated-public-key")
-    transaction.reload
-
-    assert_equal "updated-public-key", transaction.public_key
-    assert_equal "original-signature", transaction.digital_signature
-
-    transaction.update!(digital_signature: "updated-signature")
-    transaction.reload
-
-    assert_equal "updated-public-key", transaction.public_key
-    assert_equal "updated-signature", transaction.digital_signature
+    [{ public_key: "updated-public-key" }, { digital_signature: "updated-signature" }].each do |change|
+      assert_not transaction.update(change)
+      assert_equal ["Transaction content cannot change after creation"], transaction.errors.full_messages
+      transaction.reload
+      assert_equal "original-public-key", transaction.public_key
+      assert_equal "original-signature", transaction.digital_signature
+    end
   end
 
   test "stores the receiver output value as a decimal amount" do
@@ -87,10 +83,11 @@ class TransactionTest < ActiveSupport::TestCase
     end
   end
 
-  test "checks public key presence on creation only" do
+  test "a saved public key cannot be cleared" do
     transaction = Transaction.create!(public_key: "receiver-public-key", receiver_output_value: "2", input_transaction_ids: [transactions(:first_previous).id])
 
-    assert transaction.update(public_key: nil)
-    assert_nil transaction.reload.public_key
+    assert_not transaction.update(public_key: nil)
+    assert_equal ["Transaction content cannot change after creation"], transaction.errors.full_messages
+    assert_equal "receiver-public-key", transaction.reload.public_key
   end
 end

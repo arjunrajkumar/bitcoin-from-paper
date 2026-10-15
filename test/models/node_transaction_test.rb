@@ -65,7 +65,7 @@ class NodeTransactionTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal receivers.map { |node| "Node #{node.id} received transaction #{transaction.id}" }, receipts
+    assert_equal receivers.sort_by(&:id).map { |node| "Node #{node.id} received transaction #{transaction.id}" }, receipts
     assert_equal saved_attributes, transaction.reload.attributes
   end
 
@@ -103,12 +103,8 @@ class NodeTransactionTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal [
-      "Node #{sender.id} received transaction #{transaction.id}",
-      "Node #{later_node.id} received transaction #{transaction.id}",
-      "Node #{receiver.id} received transaction #{transaction.id}",
-      "Node #{later_node.id} received transaction #{transaction.id}"
-    ], receipts
+    expected_nodes = [sender, later_node].sort_by(&:id) + [receiver, later_node].sort_by(&:id)
+    assert_equal expected_nodes.map { |node| "Node #{node.id} received transaction #{transaction.id}" }, receipts
   end
 
   test "a broadcast with no other nodes keeps the sender's transaction" do

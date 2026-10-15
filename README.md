@@ -8,6 +8,37 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 <a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
 
+## Bitcoin Core comparison — Step 1, 15 October 2026
+
+The user approved Step 1 only: replace integer database identities with hashes, test it, and show fixed before/after diagrams on the local Weightless timeline. Both repositories were kept uncommitted for review. On 15 October 2026, the user accepted the result and authorised committing and publishing both repositories, deploying the Weightless page, then starting Step 2. Each numbered step remains separate. Step 2 still requires agreement on spending-condition and proof representation before implementation.
+
+The original implementation is preserved at `ad6ccc99312c41e16f70ee208e04e47b2e5c5a0f`. Its baseline passed 59 tests / 463 assertions (seed 6695). It has four integer-keyed tables: blocks, transactions, nodes and candidate_blocks. A transaction optionally belongs to a block; a node optionally refers to a separate candidate block. Candidate blocks contain only their ID and timestamps. Previous transaction IDs are a JSON list, not database foreign keys. A block header contains a list of transaction IDs, its creation time and a nested copy of the previous header. The other three model files define an abstract base, the guessing exercise and simulation constants; they have no tables.
+
+Approved identity rules:
+
+- Keep Rails' `id` name, with a lowercase 64-character hash as its only primary key. `block_id`, `candidate_block_id` and the existing input list hold hashes. SQLite domain tables use `WITHOUT ROWID`, so they have no hidden integer row identity. Use `db/structure.sql` to preserve this and the database rules on a fresh load.
+- Hash UTF-8 JSON arrays with SHA-256 twice. The first item identifies the data type. Transaction input order is significant. Encode output values as exact decimal strings after the existing eight-place database cast; normalize zero to `"0.0"`. This is our simulation format, not Bitcoin's binary format.
+- A transaction hashes `["transaction", input_transaction_ids, input_count, receiver_output_value, public_key, digital_signature]`. Exclude Rails timestamps and block assignment. A block hashes `["block", transactions_hash, header_created_at, previous_header_hash]`. The transaction-list hash uses `["transactions", ordered_transaction_ids]`. The first previous-header value remains `nil`.
+- Nodes hash `["node", identity_seed]`; candidates hash `["candidate-block", identity_seed]`. Each seed is 32 random bytes stored once as lowercase hexadecimal. These are simulation identities, not Bitcoin transaction or block content hashes. A candidate still has no header or transactions.
+- Saved transaction content, block headers, block height, IDs and identity seeds cannot change. Block assignment and candidate assignment remain editable. Duplicate hashes fail instead of creating a second record. Input hashes must have the correct format; existence, repeats, spending and negative-value checks remain later steps.
+- Block height starts at zero and preserves the existing sequential local chain, even with out-of-order timestamps. It is not a key and does not enforce the planned height limit. Default node and transaction lists use hash order. Explicit proof-of-work participant lists retain their supplied order.
+- The migration refuses to replace populated tables. Development and the main test database were empty before this change. No data conversion is claimed. Applied historical migrations remain unchanged.
+
+Comparison reference: Bitcoin Core `cce32b16874e85e8a00cfa1a2190f0b6f4dcaf66`, especially `src/primitives/transaction.cpp`, `src/primitives/block.cpp`, `src/hash.h` and `src/net.h`. Core hashes transaction contents and block headers; its local `NodeId` is an integer. The node/candidate rule above is our explicitly approved simulation choice.
+
+Verification on 15 October 2026:
+
+- The first new identity run reported 10 failures and three errors in 13 tests (seed 26709). It exposed the missing hash identities, seeds and content protection. One failure came from a test assertion for `nil`; that assertion was corrected and is not missing-feature evidence. Test setup was also isolated from other classes' fixtures, and nested data snapshots use deep copies.
+- The generated decimal check found that SQLite rounded a large output value. A string column alone did not fix it: the adapter still bound a Ruby decimal as a floating-point number. `ExactDecimal` now binds exact decimal text and reads it as `BigDecimal`. The existing eight-place rounding rule remains. The empty local databases were restored from their backups before the revised migration was applied. No populated database was converted.
+- `mise exec ruby@3.4.5 -- bin/rails test` passed all 76 tests / 1,055 assertions (seed 60604). Coverage includes fixed independent hash examples, field and input-order changes, duplicate rejection, all four primary keys, both foreign keys, saved-content protection through model and direct writes, retained assignments and broadcasting, height ordering, guessing rules, and exact errors. Migration tests exercise refusal for each populated table, an empty migration, irreversible rollback, and loading the SQL structure with all eight triggers and both foreign keys.
+- Decimal coverage uses six boundary values and 40 generated values with seed `15102026`. It includes positive and negative values, zero, signed zero, one hundred-millionth, eight-place rounding, a large value and Unicode text. It checks exact persisted values, hashes and finiteness. Twenty same-time records per seed-based model exercise distinct identities. These samples do not prove collision freedom or all numeric inputs.
+- `mise exec ruby@3.4.5 -- bin/rails zeitwerk:check` and `git diff --check` passed. The unchanged guessing exercise still chooses from 0 through 10. No coinbase, input/output records, unspent-output set, balance checks, timer, networking or separate node databases were added. Concurrent block creation and multi-database agreement were not tested.
+- The local Weightless page shows fixed baseline and Step 1 diagrams in one grey card, with the user's highlighted note. Desktop, 390px and 320px renderings were checked. The 14 October diagram is unchanged. Both projects remain uncommitted; there was no push or deployment.
+
+Rollback requires the baseline code and a matching pre-migration database backup. The ignored local backups are `tmp/hash-identity-baseline/development.sqlite3` and `tmp/hash-identity-baseline/test.sqlite3`. Stop the local server before restoring a database. The migration refuses automatic rollback; it cannot reconstruct integer identities. Preserve any data added after this step before a restore.
+
+The sections below record earlier learning steps. Their integer IDs, editable content and hash placeholders describe the baseline, not the Step 1 replacement.
+
 ## Rules for the planned simulation
 
 `app/models/protocol_rules.rb` defines these values. The total limit is calculated from the inclusive block range and fixed reward.

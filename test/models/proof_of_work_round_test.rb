@@ -75,6 +75,19 @@ class ProofOfWorkRoundTest < ActiveSupport::TestCase
     assert_nil proof.find_winner([])
   end
 
+  test "the default round collects guesses in hash order and picks its first match" do
+    nodes = Array.new(5) { Node.create! }
+    events = []
+    original_guess = Node.instance_method(:guess)
+    Node.define_method(:guess) { events << id; 5 }
+
+    winner = proof_with_number(5).find_winner
+    assert_equal nodes.map(&:id).sort, events
+    assert_equal nodes.map(&:id).min, winner.id
+  ensure
+    Node.define_method(:guess, original_guess) if original_guess
+  end
+
   test "requires a target before asking nodes to guess" do
     events = []
     node = node_with_guess(5, events)

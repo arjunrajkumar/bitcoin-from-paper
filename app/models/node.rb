@@ -1,4 +1,6 @@
 class Node < ApplicationRecord
+  include SeedIdentity
+
   belongs_to :candidate_block, optional: true
 
   def create_transaction(attributes)
@@ -17,5 +19,11 @@ class Node < ApplicationRecord
 
   def guess
     rand(ProtocolRules::PROOF_OF_WORK_NUMBER_RANGE)
+  end
+
+  private
+
+  def calculate_id
+    ContentHash.calculate("node", identity_seed)
   end
 end
