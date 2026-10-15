@@ -3,11 +3,16 @@ class Block < ApplicationRecord
 
   has_many :transactions
 
-  before_create :record_header_creation_time
+  before_create :build_header
+
+  def potential_transactions
+    # Receiving transactions from the network will be added later.
+    Transaction.order(:id)
+  end
 
   def calculate_transactions_hash
     # Hashing needs to be added later.
-    transactions.pluck(:id)
+    potential_transactions.map(&:id)
   end
 
   def calculate_header_hash
@@ -17,7 +22,8 @@ class Block < ApplicationRecord
 
   private
 
-  def record_header_creation_time
+  def build_header
+    header["transactions_hash"] = calculate_transactions_hash
     header["created_at"] = created_at&.utc&.iso8601(6)
   end
 end

@@ -19,53 +19,93 @@ class BlockTest < ActiveSupport::TestCase
     assert_nil block.created_at
     assert_nil block.transactions_hash
     assert_equal({"transactions_hash" => nil, "created_at" => nil}, block.header)
-    assert_equal [], block.calculate_transactions_hash
     assert_equal({"transactions_hash" => nil, "created_at" => nil}, block.calculate_header_hash)
   end
 
   test "records the block creation time in its header" do
     travel_to Time.utc(2026, 10, 15, 10, 30, 0) do
       block = Block.create!.reload
+      expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
 
       assert_equal Time.utc(2026, 10, 15, 10, 30, 0), block.created_at
-      assert_equal({"transactions_hash" => nil, "created_at" => "2026-10-15T10:30:00.000000Z"}, block.header)
-      assert_equal [], block.calculate_transactions_hash
+      assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}, block.header)
+      assert_equal expected_ids, block.calculate_transactions_hash
     end
   end
 
-  test "uses the block creation time when a supplied header has a different time" do
+  test "builds the header from potential transactions rather than assigned transactions" do
     recorded_time = Time.utc(2026, 10, 15, 10, 30, 0, 123456)
-    block = Block.create!(
+    potential_transaction = transactions(:first_previous)
+    assigned_transaction = transactions(:second_previous)
+    block = Block.new(
+      transactions: [assigned_transaction],
       created_at: recorded_time,
       header: {transactions_hash: "T1", created_at: "2000-01-01T00:00:00.000000Z"}
-    ).reload
+    )
+    block.define_singleton_method(:potential_transactions) { [potential_transaction] }
+    block.save!
+    block.reload
 
     assert_equal recorded_time, block.created_at
-    assert_equal "T1", block.transactions_hash
-    assert_equal({"transactions_hash" => "T1", "created_at" => "2026-10-15T10:30:00.123456Z"}, block.header)
+    assert_equal [potential_transaction.id], block.calculate_transactions_hash
+    assert_equal({"transactions_hash" => [potential_transaction.id], "created_at" => "2026-10-15T10:30:00.123456Z"}, block.header)
+    assert_equal block, assigned_transaction.reload.block
+    assert_nil potential_transaction.reload.block
+  end
+
+  test "records current potential transactions without rebuilding when more become available" do
+    expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
+    block = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30, 0))
+
+    expected_header = {"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}
+    assert_equal expected_header, block.reload.header
+    assert_empty block.transactions
+
+    later_transaction = Transaction.create!(
+      public_key: "later-receiver-public-key",
+      receiver_output_value: "1",
+      input_transaction_ids: [transactions(:first_previous).id]
+    )
+    block.save!
+
+    assert_equal expected_header, block.reload.header
+    assert_equal (expected_ids + [later_transaction.id]).sort, block.calculate_transactions_hash
+    assert_empty block.transactions
+    assert_nil later_transaction.reload.block
   end
 
   test "the hash placeholders leave stored values unchanged" do
     recorded_time = Time.utc(2026, 10, 15, 10, 30, 0)
-    block = Block.create!(created_at: recorded_time, transactions_hash: "T1")
-    block.transactions << transactions(:first_previous)
+    block = Block.create!(created_at: recorded_time, transactions: [transactions(:first_previous)])
     stored_values = block.reload.attributes
+    expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
 
-    assert_equal [transactions(:first_previous).id], block.calculate_transactions_hash
-    assert_equal({"transactions_hash" => "T1", "created_at" => "2026-10-15T10:30:00.000000Z"}, block.calculate_header_hash)
+    assert_equal expected_ids, block.calculate_transactions_hash
+    assert_equal({"transactions_hash" => expected_ids, "created_at" => "2026-10-15T10:30:00.000000Z"}, block.calculate_header_hash)
     assert_equal stored_values, block.reload.attributes
   end
 
-  test "returns only the IDs of transactions in this block" do
+  test "potential transactions currently include every stored transaction" do
     block = Block.create!
     block.transactions << [transactions(:first_previous), transactions(:second_previous)]
     another_block = Block.create!
     another_block.transactions << transactions(:third_previous)
-    expected_ids = [transactions(:first_previous).id, transactions(:second_previous).id].sort
+    expected_ids = transactions(:first_previous, :second_previous, :third_previous).map(&:id).sort
 
-    assert_equal expected_ids, block.reload.calculate_transactions_hash.sort
+    assert_equal expected_ids, Block.new.potential_transactions.map(&:id)
+    assert_equal expected_ids, block.reload.calculate_transactions_hash
     block.transactions.load
-    assert_equal expected_ids, block.calculate_transactions_hash.sort
+    assert_equal expected_ids, block.calculate_transactions_hash
+    assert_equal another_block, transactions(:third_previous).reload.block
+  end
+
+  test "an empty transaction store produces empty candidates and an empty header input" do
+    Transaction.delete_all
+    block = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30, 0))
+
+    assert_empty block.potential_transactions
+    assert_equal [], block.calculate_transactions_hash
+    assert_equal({"transactions_hash" => [], "created_at" => "2026-10-15T10:30:00.000000Z"}, block.reload.header)
   end
 
   test "later updates and calculations keep the original creation time" do
