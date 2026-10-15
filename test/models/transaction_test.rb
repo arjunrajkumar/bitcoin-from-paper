@@ -29,10 +29,10 @@ class TransactionTest < ActiveSupport::TestCase
     assert_equal "sender-digital-signature", transaction.digital_signature
   end
 
-  test "stores blocks and transactions in the prototype" do
+  test "stores blocks nodes and transactions in the prototype" do
     domain_tables = ApplicationRecord.connection.tables - %w[schema_migrations ar_internal_metadata]
 
-    assert_equal ["blocks", "transactions"], domain_tables.sort
+    assert_equal ["blocks", "nodes", "transactions"], domain_tables.sort
     assert_includes Transaction.column_names, "block_id"
   end
 

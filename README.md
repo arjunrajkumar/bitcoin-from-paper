@@ -14,13 +14,33 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 This step defines the values only. Coinbase creation, the timer, and checks that enforce the block range and total limit will be built in later agreed steps.
 
-## Proof-of-work learning exercise
+## Our proof-of-work assumptions and method
 
-`ProofOfWork#generate_number` chooses an integer from 0 through 10 inclusive and keeps it in that object's memory. `matches?(received_number)` returns true only for the matching integer. Checking a guess does not generate a new target. Before generation, every guess returns false. Call `generate_number` again to choose the target for another round.
+For our proof-of-work exercise, we choose a target number from 0 to 10, inclusive. Each node guesses once per round. We collect every guess, then check them in order. The first matching entry wins. If no guess matches, we choose a random node from that round.
 
-This is our simplified guessing exercise. It does not perform Bitcoin's hash-based proof-of-work or protect block contents. Sharing a target between nodes, choosing the first winner and connecting the result to a block are later steps. Nothing is saved to the database in this step.
+We control which nodes take part and run each round in one local program. A node can try again only after all nodes have guessed. This is our simulation rule, with no real hashing or CPU race. Network communication and connecting the winner to a block come later.
 
-Verified on 15 October 2026: all 36 tests / 282 assertions passed (seed 24120), including all 121 target/guess pairs from 0 through 10, invalid guesses, checking before generation, and keeping the target unchanged during checks. Rails loading and whitespace checks passed.
+`ProofOfWork#generate_number` chooses an integer from 0 through 10 inclusive and keeps it in that object's memory. `matches?(received_number)` returns true only for the matching integer. Checking a guess does not generate a new target. Before generation, every guess returns false. The shared number range is defined in `ProtocolRules`.
+
+The [whitepaper's Section 5](https://bitcoin.org/bitcoin.pdf) calls the participants nodes, including those finding proof of work. Our `Node` model stores an ID and Rails timestamps. `Node#guess` generates one integer in the same range. These are local records for our simulation.
+
+`ProofOfWork#find_winner` runs one round. It reads all saved nodes in ID order and collects one guess from each before checking any answer. The first matching entry wins. If no guess matches, it picks a random participant. With no participants, it returns `nil`. It requires a generated target and raises `ArgumentError` with `Generate a number before starting a round` if there is none.
+
+An optional node list can be supplied for a local round. Its order decides which matching entry wins. Duplicate records of the same node count once. Each later call starts another round, after the previous call has collected all guesses. Call `generate_number` to change the target; `find_winner` leaves it unchanged.
+
+```ruby
+3.times { Node.create! }
+proof = ProofOfWork.new
+proof.generate_number
+winner = proof.find_winner
+winner.id
+```
+
+Rounds run one call at a time. Node records are saved, but targets, guesses and winners are not. This exercise does not protect block contents. Concurrent requests, block creation and rewards are later steps.
+
+Verified the node round on 15 October 2026. The nine new tests first reported the missing `Node` model and `find_winner` method (seed 41166). Applied `20261015000014_create_nodes.rb` locally. Updated the existing exact table-list assertion to include the requested nodes table. `mise exec ruby@3.4.5 -- bin/rails test` then passed all 45 tests / 386 assertions (seed 24477). Checks cover collecting every guess before selection, first-match order, duplicate records, repeated rounds, empty rounds, the required target, and every fallback selection among three nodes for all 11 targets. These are local, sequential checks. Rails loading and whitespace checks passed.
+
+Verification of the initial guessing exercise on 15 October 2026: all 36 tests / 282 assertions passed (seed 24120), including all 121 target/guess pairs from 0 through 10, invalid guesses, checking before generation, and keeping the target unchanged during checks. Rails loading and whitespace checks passed.
 
 ## Current learning step: block headers
 
