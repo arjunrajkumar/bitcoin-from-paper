@@ -14,6 +14,37 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 This step defines the values only. Coinbase creation, the timer, and checks that enforce the block range and total limit will be built in later agreed steps.
 
+## Creating and broadcasting transactions locally
+
+`Node#create_transaction(attributes)` calls `Transaction.create!(attributes)` directly. It uses the existing transaction validation rules. It does not broadcast automatically.
+
+`Node#broadcast_transaction(transaction)` calls `receive_transaction` on every other saved node. For now, receiving only writes `Node <id> received transaction <id>` to the Rails log. Each call reports receipt, including repeated broadcasts.
+
+For this learning step, all nodes share one local database. Each transaction is stored once. Nodes do not keep their own transaction lists or copies. A broadcast includes all other nodes saved at the time of that call.
+
+Use saved nodes and a saved transaction for a broadcast. This example requires an existing transaction to reference. Creating the first transaction is a later step.
+
+```ruby
+sender = Node.create!
+receiver = Node.create!
+previous_transaction = Transaction.first!
+
+transaction = sender.create_transaction(
+  public_key: "receiver-public-key",
+  receiver_output_value: "2",
+  input_transaction_ids: [previous_transaction.id]
+)
+
+sender.broadcast_transaction(transaction)
+# Check log/development.log for the receiving node's message.
+```
+
+These calls run locally, one at a time. They do not generate keys or signatures, check spending rights, or use a real network. Keeping received transactions for block selection is a later step; the current block placeholder still reads all stored transactions.
+
+On 15 October 2026, the user requested direct transaction creation and removal of the per-node transaction lists. Reverted the development join-table migration and removed its uncommitted file. The development database had no blocks, nodes, transactions or links before removal. The separate test rollback failed because the migration file was already removed. After the test run, a direct database check confirmed that both development and test contain only the original domain tables and use migration version `20261015000014`.
+
+Revised checks first failed on the retained table, the dependency on a saved node, and the missing receipt messages (17 tests / 72 assertions, five failures and one error, seed 64939). The final `mise exec ruby@3.4.5 -- bin/rails test` run passed 53 tests / 432 assertions (seed 57972). Checks cover direct creation, existing validation failures, separate broadcast, receipt by all other nodes, repeated calls, later nodes, no other nodes, and broadcasting only the selected transaction. Rails loading and whitespace checks passed. Real network delivery and concurrent broadcasts were not tested.
+
 ## Proof-of-work assumptions and method
 
 For the proof-of-work exercise, the program chooses a target number from 0 to 10, inclusive. Each node guesses once per round. The program collects every guess, then checks them in order. The first matching entry wins. If no guess matches, the program chooses a random node from that round.
