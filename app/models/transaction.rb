@@ -9,12 +9,21 @@ class Transaction < ApplicationRecord
   OUTPUT_VALUE_TYPE = ExactDecimal.new(precision: 20, scale: 8)
 
   belongs_to :block, optional: true
+  has_many :unspent_outputs, inverse_of: :source_transaction
 
   before_validation :normalize_content, on: :create
   validate :input_structure, on: :create
   validate :output_structure, on: :create
+  after_create :update_unspent_outputs
 
   private
+
+  def update_unspent_outputs
+    inputs.each do |input|
+      UnspentOutput.where(transaction_id: input.fetch("previous_transaction_id"), output_index: input.fetch("output_index")).delete_all
+    end
+    outputs.each_index { |index| UnspentOutput.create!(transaction_id: id, output_index: index) }
+  end
 
   def identity_attributes
     %w[inputs outputs]

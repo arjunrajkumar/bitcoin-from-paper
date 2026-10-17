@@ -1,0 +1,11 @@
+first_previous:
+  transaction_id: bd0cfc70976d1d08dad86973dfb371e06b3051aaab33db2dbde88c39509cf205
+  output_index: 0
+
+second_previous:
+  transaction_id: 4ec3d77d79e482322fb8b6b0c06f6ebb775cdd79a4e37e82af64758adcb865af
+  output_index: 0
+
+third_previous:
+  transaction_id: b1da14c74f8bdb7c317749fc8a30cc49608b85b1425138d480b160da0fc1d2b8
+  output_index: 0

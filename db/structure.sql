@@ -61,7 +61,12 @@ WHEN length(NEW.id) != 64 OR NEW.id GLOB '*[^0-9a-f]*'
 BEGIN
   SELECT RAISE(ABORT, 'Transaction id must be a lowercase 64-character hash');
 END;
+CREATE TABLE IF NOT EXISTS "unspent_outputs" ("transaction_id" varchar(64) NOT NULL, "output_index" integer NOT NULL, PRIMARY KEY ("transaction_id", "output_index"), CONSTRAINT "fk_rails_9fd814bb10"
+FOREIGN KEY ("transaction_id")
+  REFERENCES "transactions" ("id")
+ ON DELETE CASCADE, CONSTRAINT unspent_outputs_position CHECK (typeof(output_index) = 'integer' AND output_index BETWEEN 0 AND 4294967295)) WITHOUT ROWID;
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017000018'),
 ('20261015000017'),
 ('20261015000016'),
 ('20261015000015'),

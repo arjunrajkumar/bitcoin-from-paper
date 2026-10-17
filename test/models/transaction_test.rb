@@ -3,7 +3,7 @@ require "test_helper"
 class TransactionTest < ActiveSupport::TestCase
   test "stores blocks candidate blocks nodes and transactions in the prototype" do
     domain_tables = ApplicationRecord.connection.tables - %w[schema_migrations ar_internal_metadata]
-    assert_equal ["blocks", "candidate_blocks", "nodes", "transactions"], domain_tables.sort
+    assert_equal ["blocks", "candidate_blocks", "nodes", "transactions", "unspent_outputs"], domain_tables.sort
     assert_includes Transaction.column_names, "block_id"
   end
 
