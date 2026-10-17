@@ -10,6 +10,8 @@ class HashIdentityTest < ActiveSupport::TestCase
     Transaction.delete_all
     CandidateBlock.delete_all
     Block.delete_all
+    prepare_unspent_transaction(values: Array.new(46, "999999999999.99999999"), id: "a" * 64)
+    prepare_unspent_transaction(values: ["5"], id: "b" * 64)
   end
 
   test "all four domain tables use hash primary keys without integer row aliases" do
@@ -28,7 +30,9 @@ class HashIdentityTest < ActiveSupport::TestCase
   test "transaction and block hashes match independent fixed vectors" do
     transaction = Transaction.create!(transaction_attributes)
     assert_equal "2403b87eedacb26b2c96abfa822466e2100f2bb597c1285dbf5406018861944b", transaction.reload.id
-    block = Block.create!(created_at: Time.utc(2026, 10, 15, 10, 30))
+    block = Block.new(created_at: Time.utc(2026, 10, 15, 10, 30))
+    block.define_singleton_method(:potential_transactions) { [transaction] }
+    block.save!
     assert_equal "8b9e0c19ccee6aa6caa92a2b44926a3017d6d6d1bb763e5f3f93e3a645df60fe", block.transactions_hash
     assert_equal "81f490ed27f4cf5f5a55d595e5192feac1f336baed9b209785f5feb2dfd5c447", block.reload.id
     assert_equal block.id, block.calculate_header_hash
@@ -63,9 +67,11 @@ class HashIdentityTest < ActiveSupport::TestCase
   end
 
   test "duplicates fail without adding a record" do
-    Transaction.create!(transaction_attributes)
+    transaction = Transaction.create!(transaction_attributes)
     assert_no_difference "Transaction.count" do
-      assert_raises(ActiveRecord::RecordNotUnique) { Transaction.create!(transaction_attributes.merge(created_at: 1.day.ago)) }
+      assert_raises(ActiveRecord::RecordNotUnique) { Transaction.insert_all!([transaction.attributes.merge("created_at" => 1.day.ago)]) }
+      error = assert_raises(ActiveRecord::RecordInvalid) { Transaction.create!(transaction_attributes) }
+      assert_equal ["Inputs item 0 references a missing or spent output"], error.record.errors.full_messages
     end
     [Node, CandidateBlock].each do |model|
       model.create!(identity_seed: "00" * 32)
@@ -137,7 +143,7 @@ class HashIdentityTest < ActiveSupport::TestCase
     end
   end
 
-  test "hash references reject malformed values but retain later-step spending cases" do
+  test "hash references reject malformed values and negative outputs" do
     [nil, [], 1, "abc", "A" * 64].each do |hash|
       transaction = Transaction.new(transaction_attributes(previous_id: hash))
       assert_not transaction.save
@@ -145,9 +151,9 @@ class HashIdentityTest < ActiveSupport::TestCase
     end
     attributes = transaction_attributes(previous_id: "b" * 64, value: "-1")
     attributes[:inputs] *= 2
-    transaction = Transaction.create!(attributes)
-    assert_equal ["b" * 64, "b" * 64], transaction.reload.inputs.map { |input| input.fetch("previous_transaction_id") }
-    assert_equal "-1.0", transaction.outputs.first.fetch("value")
+    transaction = Transaction.new(attributes)
+    assert_not transaction.save
+    assert_equal ["Outputs item 0 value must not be negative"], transaction.errors.full_messages
   end
 
   test "invalid identity seeds fail without creating records" do
@@ -174,6 +180,12 @@ class HashIdentityTest < ActiveSupport::TestCase
     values += Array.new(40) { format("%d.%08d", random.rand(-1000..1000), random.rand(0..99_999_999)) }
     values.each_with_index do |value, index|
       attributes = transaction_attributes(value: value, public_key: "key-#{index}-£", output_index: index)
+      if BigDecimal(value).negative?
+        transaction = Transaction.new(attributes)
+        assert_no_difference("Transaction.count") { assert_not transaction.save }
+        assert_equal ["Outputs item 0 value must not be negative"], transaction.errors.full_messages
+        next
+      end
       transaction = Transaction.create!(attributes).reload
       amount = BigDecimal(transaction.outputs.first.fetch("value"))
       assert_equal BigDecimal(value).round(8), amount
@@ -186,13 +198,18 @@ class HashIdentityTest < ActiveSupport::TestCase
   end
 
   test "each transaction field and ordered input list affects the hash" do
-    base = Transaction.create!(transaction_attributes)
+    hashes = []
     variants = [
       { previous_id: "b" * 64 }, { output_index: 1 }, { value: "2.126" },
       { public_key: "other" }, { signature: "other" }, { signature: "" }
-    ].map { |attributes| Transaction.create!(transaction_attributes(**attributes)) }
-    assert_equal 7, ([base] + variants).map(&:id).uniq.length
-    same = Transaction.new(transaction_attributes(value: "2.12500000"))
-    assert_raises(ActiveRecord::RecordNotUnique) { same.save! }
+    ]
+    ([{}] + variants + [{ value: "2.12500000" }]).each do |attributes|
+      Transaction.transaction(requires_new: true) do
+        hashes << Transaction.create!(transaction_attributes(**attributes)).reload.id
+        raise ActiveRecord::Rollback
+      end
+    end
+    assert_equal 7, hashes.first(7).uniq.length
+    assert_equal hashes.first, hashes.last
   end
 end

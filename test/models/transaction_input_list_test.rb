@@ -1,6 +1,18 @@
 require "test_helper"
 
 class TransactionInputListTest < ActiveSupport::TestCase
+  test "prepared fixtures contain output lists with their original exact values and hashes" do
+    [:first_previous, :second_previous, :third_previous].zip(["5.0", "3.0", "1.0"]).each do |name, value|
+      source = transactions(name)
+      assert_instance_of Array, source.inputs
+      assert_instance_of Array, source.outputs
+      assert_equal value, UnspentOutput.find([source.id, 0]).output.fetch("value")
+      inputs = source.inputs.map { |item| item.values_at("previous_transaction_id", "output_index", "script_sig") }
+      outputs = source.outputs.map { |item| [item.fetch("value"), item.fetch("script_pub_key").fetch("operation"), item.fetch("script_pub_key").fetch("public_key")] }
+      assert_equal Digest::SHA256.hexdigest(Digest::SHA256.digest(JSON.generate(["transaction", inputs, outputs]))), source.id
+    end
+  end
+
   test "stores one input without changing the previous transaction" do
     previous = transactions(:first_previous)
     before = previous.attributes.deep_dup
@@ -20,11 +32,13 @@ class TransactionInputListTest < ActiveSupport::TestCase
     assert_equal before, previous.map { |record| record.reload.attributes }
   end
 
-  test "stores repeated references until spending validation is implemented" do
+  test "rejects repeated references without changing the source or available outputs" do
     input = transaction_attributes(previous_id: transactions(:first_previous).id).fetch(:inputs).first
-    transaction = Transaction.create!(transaction_attributes.merge(inputs: [input, input]))
-    assert_equal 2, transaction.reload.inputs.length
-    assert_equal transaction.inputs.first, transaction.inputs.last
+    transaction = Transaction.new(transaction_attributes.merge(inputs: [input, input]))
+    before = UnspentOutput.order(:transaction_id, :output_index).pluck(:transaction_id, :output_index)
+    assert_no_difference("Transaction.count") { assert_not transaction.save }
+    assert_equal ["Inputs item 1 repeats a previous output"], transaction.errors.full_messages
+    assert_equal before, UnspentOutput.order(:transaction_id, :output_index).pluck(:transaction_id, :output_index)
   end
 
   test "failed creation leaves the previous transaction unchanged" do

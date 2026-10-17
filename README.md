@@ -8,6 +8,12 @@ For the first version, I'm building a simulation of blocks 0 through 1000. The p
 
 <a href="https://github.com/arjunrajkumar/bitcoin-from-paper"><ins>GitHub</ins></a>
 
+## Transaction spending
+
+A new transaction can spend each available output once. It rejects repeated inputs, missing or spent outputs, negative output values, and output totals greater than the input total. It reads input values from the stored previous outputs. Failed saves leave transaction history and available outputs unchanged, even when the caller catches the error inside another database transaction.
+
+Signature checks and coinbase creation are not implemented yet. Tests use prepared starting outputs. The earlier snapshots below describe the model at each stage. See the [spending rules and test evidence](docs/step-4-spending-checks.md) for details.
+
 ## Bitcoin Core comparison — Step 3, 17 October 2026
 
 The user authorised Step 3 and chose to update the unspent-output set when a transaction is saved. This is a local simulation rule. Bitcoin Core updates its confirmed set as it applies blocks and handles pending transactions separately. Keep our existing shared database and receipt-only broadcasts. Do not add block acceptance, a mempool, signatures, spending checks or coinbase rules in this step. On 17 October 2026, the user reviewed the code and storage rules, accepted Step 3, and authorised committing, pushing and publishing it on the learning page. Step 4 has not started.

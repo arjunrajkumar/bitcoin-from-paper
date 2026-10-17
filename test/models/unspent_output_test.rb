@@ -9,7 +9,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "validation alone leaves the set unchanged and first save adds each output" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["5"])
     before = available_outputs
     transaction = Transaction.new(inputs: [input(source.id, 0)], outputs: [output("3", "alice"), output("2", "bob")])
     assert transaction.valid?
@@ -24,7 +24,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
 
   test "all ordinary creation paths update the same persistent set" do
     creators.each_with_index do |create, index|
-      source = Transaction.create!(transaction_attributes(public_key: "source-#{index}"))
+      source = prepare_unspent_transaction(values: ["2.125"])
       before = available_outputs
       transaction = create.call(inputs: [input(source.id, 0)], outputs: [output("0.00000001", "receiver-#{index}")])
       assert transaction.persisted?
@@ -35,7 +35,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "spending one output keeps its sibling and the complete transaction history" do
-    source = Transaction.create!(inputs: [input("a" * 64, 0)], outputs: [output("3", "alice"), output("2", "bob")])
+    source = prepare_unspent_transaction(values: ["3", "2"])
     before = source.reload.attributes.deep_dup
     later = Transaction.create!(inputs: [input(source.id, 1)], outputs: [output("1", "carol"), output("1", "bob-change")])
     assert_equal [[source.id, 0], [later.id, 0], [later.id, 1]].sort, available_outputs.keys.sort
@@ -45,8 +45,8 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "multiple inputs remove only their exact references and new outputs can be spent next" do
-    first = Transaction.create!(inputs: [input("a" * 64, 0)], outputs: [output("3", "alice"), output("2", "bob")])
-    second = Transaction.create!(transaction_attributes(public_key: "other-source"))
+    first = prepare_unspent_transaction(values: ["3", "2"])
+    second = prepare_unspent_transaction(values: ["2.125"])
     combined = Transaction.create!(inputs: [input(first.id, 1), input(second.id, 0)], outputs: [output("4", "carol")])
     assert_equal [[first.id, 0], [combined.id, 0]].sort, available_outputs.keys.sort
     last = Transaction.create!(inputs: [input(combined.id, 0), input(first.id, 0)], outputs: [output("7", "dave")])
@@ -58,7 +58,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "saving metadata assigning blocks and broadcasting do not restore spent outputs" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     later = Transaction.create!(transaction_attributes(previous_id: source.id, public_key: "later"))
     before = available_outputs
     source.save!
@@ -74,7 +74,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "invalid creation through every path leaves history and available outputs unchanged" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     creators.each do |create|
       before = available_outputs
       assert_no_difference "Transaction.count" do
@@ -91,14 +91,14 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "duplicate creation and rejected content edits leave the set unchanged" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     later = Transaction.create!(transaction_attributes(previous_id: source.id, public_key: "later"))
     before = available_outputs
     assert_no_difference "Transaction.count" do
-      assert_raises(ActiveRecord::RecordNotUnique) { Transaction.create!(transaction_attributes) }
+      assert_raises(ActiveRecord::RecordNotUnique) { Transaction.insert_all!([later.attributes]) }
       assert_not later.update(outputs: [output("9", "changed")])
       assert_equal ["Transaction content cannot change after creation"], later.errors.full_messages
-      invalid = Transaction.new(transaction_attributes(public_key: "wrong-id").merge(id: "f" * 64))
+      invalid = Transaction.new(transaction_attributes(previous_id: later.id, public_key: "wrong-id").merge(id: "f" * 64))
       assert_not invalid.save
       assert_equal ["Id must match the calculated hash"], invalid.errors.full_messages
     end
@@ -106,7 +106,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "failure during output insertion rolls back input removals and earlier inserted outputs" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     block = Block.create!
     before = available_outputs
     original_block = block.attributes.deep_dup
@@ -131,7 +131,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "a caller rollback restores both the transaction history and the set" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     before = available_outputs
     assert_no_difference "Transaction.count" do
       Transaction.transaction(requires_new: true) do
@@ -143,26 +143,31 @@ class UnspentOutputTest < ActiveSupport::TestCase
     assert_equal before, available_outputs
   end
 
-  test "tracking retains the later-step spending cases without claiming to validate them" do
-    source = Transaction.create!(transaction_attributes)
+  test "invalid spending cannot add new available outputs" do
+    source = prepare_unspent_transaction(values: ["2.125"])
     repeated = input(source.id, 0)
-    first = Transaction.create!(inputs: [repeated, repeated, input("f" * 64, 4_294_967_295)], outputs: [output("-1", "alice")])
-    second = Transaction.create!(inputs: [repeated], outputs: [output("1000", "bob")])
-    assert_equal [[first.id, 0], [second.id, 0]].sort, available_outputs.keys.sort
-    assert_equal "-1.0", UnspentOutput.find([first.id, 0]).output.fetch("value")
-    assert_equal "1000.0", UnspentOutput.find([second.id, 0]).output.fetch("value")
-    assert_equal 3, Transaction.count
+    before = available_outputs
+    first = Transaction.new(inputs: [repeated, repeated, input("f" * 64, 4_294_967_295)], outputs: [output("-1", "alice")])
+    second = Transaction.new(inputs: [repeated], outputs: [output("1000", "bob")])
+    assert_not first.save
+    assert_equal ["Outputs item 0 value must not be negative"], first.errors.full_messages
+    assert_not second.save
+    assert_equal ["Outputs total value must not exceed total input value"], second.errors.full_messages
+    assert_equal before, available_outputs
+    assert_equal 1, Transaction.count
   end
 
   test "generated transaction sequences match an independent output map after every save" do
     random = Random.new(17102026)
     expected = {}
-    boundaries = ["0", "-0", "0.00000001", "-0.00000001", "999999999999.99999999", "1.234567895"]
+    boundaries = ["0", "-0", "0.00000001", "999999999999.99999999", "1.234567895"]
     36.times do |step|
       references = expected.keys.sample([expected.size, random.rand(1..3)].min, random: random)
-      inputs = references.empty? ? [input("a" * 64, 0)] : references.map { |hash, position| input(hash, position) }
+      source = prepare_unspent_transaction(values: ["1000000000100"])
+      references << [source.id, 0]
+      inputs = references.map { |hash, position| input(hash, position) }
       values = Array.new([1, 2, 5].fetch(step % 3)) do |index|
-        step < boundaries.length && index.zero? ? boundaries.fetch(step) : format("%d.%08d", random.rand(-20..20), random.rand(0..99_999_999))
+        step < boundaries.length && index.zero? ? boundaries.fetch(step) : format("%d.%08d", random.rand(0..20), random.rand(0..99_999_999))
       end
       outputs = values.each_with_index.map { |value, index| output(value, "key-#{step}-#{index}") }
       transaction = Transaction.create!(inputs: inputs, outputs: outputs)
@@ -177,7 +182,7 @@ class UnspentOutputTest < ActiveSupport::TestCase
   end
 
   test "deleting source history removes its own rows without restoring consumed inputs" do
-    source = Transaction.create!(transaction_attributes)
+    source = prepare_unspent_transaction(values: ["2.125"])
     later = Transaction.create!(transaction_attributes(previous_id: source.id, public_key: "later"))
     later.destroy!
     assert_empty available_outputs

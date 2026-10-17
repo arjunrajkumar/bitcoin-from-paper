@@ -1,16 +1,16 @@
-# These test records refer to an external placeholder transaction.
-# Coinbase creation and checks for missing previous outputs are later steps.
+# Prepared starting state for tests, loaded without creation callbacks.
+# These are not valid coinbase transactions; coinbase creation is Step 5.
 first_previous:
   id: bd0cfc70976d1d08dad86973dfb371e06b3051aaab33db2dbde88c39509cf205
-  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "first-sender-signature" }].to_json.inspect %>
-  outputs: <%= [{ value: "5.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "first-owner-public-key" } }].to_json.inspect %>
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "first-sender-signature" }].to_json %>
+  outputs: <%= [{ value: "5.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "first-owner-public-key" } }].to_json %>
 
 second_previous:
   id: 4ec3d77d79e482322fb8b6b0c06f6ebb775cdd79a4e37e82af64758adcb865af
-  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "second-sender-signature" }].to_json.inspect %>
-  outputs: <%= [{ value: "3.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "second-owner-public-key" } }].to_json.inspect %>
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "second-sender-signature" }].to_json %>
+  outputs: <%= [{ value: "3.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "second-owner-public-key" } }].to_json %>
 
 third_previous:
   id: b1da14c74f8bdb7c317749fc8a30cc49608b85b1425138d480b160da0fc1d2b8
-  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "third-sender-signature" }].to_json.inspect %>
-  outputs: <%= [{ value: "1.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "third-owner-public-key" } }].to_json.inspect %>
+  inputs: <%= [{ previous_transaction_id: "a" * 64, output_index: 0, script_sig: "third-sender-signature" }].to_json %>
+  outputs: <%= [{ value: "1.0", script_pub_key: { operation: "OP_CHECKSIG", public_key: "third-owner-public-key" } }].to_json %>

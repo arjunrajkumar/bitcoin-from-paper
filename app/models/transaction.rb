@@ -14,15 +14,67 @@ class Transaction < ApplicationRecord
   before_validation :normalize_content, on: :create
   validate :input_structure, on: :create
   validate :output_structure, on: :create
+  validate :spending_rules, on: :create
   after_create :update_unspent_outputs
+
+  # A caller may rescue a failed save inside a larger transaction. Keep each
+  # new payment's history and output changes inside their own rollback boundary.
+  def save(**options, &block)
+    return super unless new_record?
+
+    self.class.transaction(requires_new: true) do
+      saved = super
+      raise ActiveRecord::Rollback unless saved
+      saved
+    end || false
+  end
+
+  def save!(**options, &block)
+    return super unless new_record?
+
+    self.class.transaction(requires_new: true) { super }
+  end
 
   private
 
   def update_unspent_outputs
-    inputs.each do |input|
-      UnspentOutput.where(transaction_id: input.fetch("previous_transaction_id"), output_index: input.fetch("output_index")).delete_all
+    inputs.each_with_index do |input, index|
+      removed = UnspentOutput.where(transaction_id: input.fetch("previous_transaction_id"), output_index: input.fetch("output_index")).delete_all
+      unless removed == 1
+        add_unavailable_input_error(index)
+        raise ActiveRecord::RecordInvalid, self
+      end
     end
     outputs.each_index { |index| UnspentOutput.create!(transaction_id: id, output_index: index) }
+  end
+
+  def spending_rules
+    return if errors.any?
+
+    references = Set.new
+    inputs.each_with_index do |input, index|
+      reference = [input.fetch("previous_transaction_id"), input.fetch("output_index")]
+      errors.add(:inputs, "item #{index} repeats a previous output") unless references.add?(reference)
+    end
+    return if errors.any?
+
+    input_value = BigDecimal("0")
+    inputs.each_with_index do |input, index|
+      available = UnspentOutput.find_by(transaction_id: input.fetch("previous_transaction_id"), output_index: input.fetch("output_index"))
+      if available
+        input_value += BigDecimal(available.output.fetch("value"))
+      else
+        add_unavailable_input_error(index)
+      end
+    end
+    return if errors.any?
+
+    output_value = outputs.sum { |output| BigDecimal(output.fetch("value")) }
+    errors.add(:outputs, "total value must not exceed total input value") if output_value > input_value
+  end
+
+  def add_unavailable_input_error(index)
+    errors.add(:inputs, "item #{index} references a missing or spent output")
   end
 
   def identity_attributes
@@ -46,7 +98,7 @@ class Transaction < ApplicationRecord
       next output unless output.is_a?(Hash)
       normalized = output.deep_stringify_keys
       value = decimal_value(normalized["value"])
-      normalized["value"] = OUTPUT_VALUE_TYPE.serialize(value) if value&.finite?
+      normalized["value"] = OUTPUT_VALUE_TYPE.serialize(value) if value&.finite? && !value.negative?
       normalized
     end
   end
@@ -89,8 +141,11 @@ class Transaction < ApplicationRecord
 
   def output_structure
     validate_list(:outputs, OUTPUT_FIELDS) do |output, index|
-      unless decimal_value(output.fetch("value"))&.finite?
+      value = decimal_value(output.fetch("value"))
+      if !value&.finite?
         errors.add(:outputs, "item #{index} value must be a finite number")
+      elsif value.negative?
+        errors.add(:outputs, "item #{index} value must not be negative")
       end
       script = output.fetch("script_pub_key")
       unless script.is_a?(Hash) && script.keys.sort == SCRIPT_FIELDS.sort

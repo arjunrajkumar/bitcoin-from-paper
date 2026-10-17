@@ -1,6 +1,10 @@
 require "test_helper"
 
 class TransactionTest < ActiveSupport::TestCase
+  setup do
+    prepare_unspent_transaction(values: ["20", "20"], id: "a" * 64)
+  end
+
   test "stores blocks candidate blocks nodes and transactions in the prototype" do
     domain_tables = ApplicationRecord.connection.tables - %w[schema_migrations ar_internal_metadata]
     assert_equal ["blocks", "candidate_blocks", "nodes", "transactions", "unspent_outputs"], domain_tables.sort
@@ -9,7 +13,8 @@ class TransactionTest < ActiveSupport::TestCase
 
   test "stores output amounts as exact decimal text" do
     ["12.34567890", "0", "0.00000001"].each do |value|
-      transaction = Transaction.create!(transaction_attributes(value: value))
+      source = prepare_unspent_transaction(values: ["20"])
+      transaction = Transaction.create!(transaction_attributes(previous_id: source.id, value: value))
       assert_equal BigDecimal(value), BigDecimal(transaction.reload.outputs.first.fetch("value"))
     end
   end
@@ -59,18 +64,19 @@ class TransactionTest < ActiveSupport::TestCase
     [nil, -1, 4_294_967_296, 1.5, "0", false].each do |position|
       assert_invalid(transaction_attributes(output_index: position), "Inputs item 0 output_index must be an integer from 0 through 4294967295")
     end
-    [0, 1, 4_294_967_295].each do |position|
+    [0, 1].each do |position|
       transaction = Transaction.create!(transaction_attributes(output_index: position))
       assert_equal position, transaction.reload.inputs.first.fetch("output_index")
     end
+    assert_invalid(transaction_attributes(output_index: 4_294_967_295), "Inputs item 0 references a missing or spent output")
   end
 
   test "input proofs are strings and may be empty before signature verification exists" do
     [nil, 1, false, [], {}].each do |proof|
       assert_invalid(transaction_attributes(signature: proof), "Inputs item 0 script_sig must be a string")
     end
-    ["", "not-a-real-signature"].each do |proof|
-      transaction = Transaction.create!(transaction_attributes(signature: proof))
+    ["", "not-a-real-signature"].each_with_index do |proof, index|
+      transaction = Transaction.create!(transaction_attributes(signature: proof, output_index: index))
       assert_equal proof, transaction.reload.inputs.first.fetch("script_sig")
     end
   end

@@ -6,6 +6,8 @@ class TransactionStructureTest < ActiveSupport::TestCase
   setup do
     Transaction.delete_all
     Block.delete_all
+    prepare_unspent_transaction(values: ["5"], id: "a" * 64)
+    prepare_unspent_transaction(values: ["1", "5"], id: "b" * 64)
   end
 
   test "stores ordered input proofs and output conditions without old columns" do
@@ -34,12 +36,20 @@ class TransactionStructureTest < ActiveSupport::TestCase
   test "hashes ignore object key order but include input and output list order" do
     inputs = [input("a" * 64, 0, "first-proof"), input("b" * 64, 1, "second-proof")]
     outputs = [output("1", "alice"), output("2", "bob")]
-    first = Transaction.create!(inputs: inputs, outputs: outputs)
-    reverse_inputs = Transaction.create!(inputs: inputs.reverse, outputs: outputs)
-    reverse_outputs = Transaction.create!(inputs: inputs, outputs: outputs.reverse)
-    assert_equal 3, [first, reverse_inputs, reverse_outputs].map(&:id).uniq.length
-    reordered = Transaction.new(inputs: inputs.map { |item| item.to_a.reverse.to_h }, outputs: outputs.map { |item| item.to_a.reverse.to_h })
-    assert_raises(ActiveRecord::RecordNotUnique) { reordered.save! }
+    hashes = []
+    [
+      { inputs: inputs, outputs: outputs },
+      { inputs: inputs.reverse, outputs: outputs },
+      { inputs: inputs, outputs: outputs.reverse },
+      { inputs: inputs.map { |item| item.to_a.reverse.to_h }, outputs: outputs.map { |item| item.to_a.reverse.to_h } }
+    ].each do |attributes|
+      Transaction.transaction(requires_new: true) do
+        hashes << Transaction.create!(attributes).reload.id
+        raise ActiveRecord::Rollback
+      end
+    end
+    assert_equal 3, hashes.first(3).uniq.length
+    assert_equal hashes.first, hashes.last
   end
 
   test "saved nested lists cannot change through model or direct writes" do
@@ -63,12 +73,11 @@ class TransactionStructureTest < ActiveSupport::TestCase
     assert_equal ["Outputs item 1 script_pub_key operation must be OP_CHECKSIG"], transaction.errors.full_messages
   end
 
-  test "later spending checks are not introduced by the structure change" do
+  test "a structurally valid reference still needs an available output" do
     reference = input("f" * 64, 12, "")
-    transaction = Transaction.create!(inputs: [reference, reference], outputs: [output("-1", "alice")])
-    assert_equal 2, transaction.reload.inputs.length
-    assert_equal transaction.inputs.first, transaction.inputs.last
-    assert_equal "-1.0", transaction.outputs.first.fetch("value")
+    transaction = Transaction.new(inputs: [reference], outputs: [output("1", "alice")])
+    assert_no_difference("Transaction.count") { assert_not transaction.save }
+    assert_equal ["Inputs item 0 references a missing or spent output"], transaction.errors.full_messages
     assert_not Transaction.exists?("f" * 64)
   end
 
@@ -90,8 +99,9 @@ class TransactionStructureTest < ActiveSupport::TestCase
   test "generated lists match an independent hash oracle and preserve every output" do
     random = Random.new(15102027)
     [1, 2, 5].product([1, 2, 5]).each_with_index do |(input_count, output_count), case_index|
-      inputs = Array.new(input_count) { |index| input(format("%064x", case_index * 10 + index + 1), [0, 1, 4_294_967_295].fetch(index % 3), "proof-#{case_index}-#{index}") }
-      outputs = Array.new(output_count) { |index| output(format("%d.%08d", random.rand(-10..10), random.rand(0..99_999_999)), "key-#{case_index}-#{index}") }
+      sources = Array.new(input_count) { prepare_unspent_transaction(values: ["100", "100"]) }
+      inputs = sources.each_with_index.map { |source, index| input(source.id, index % 2, "proof-#{case_index}-#{index}") }
+      outputs = Array.new(output_count) { |index| output(format("%d.%08d", random.rand(0..10), random.rand(0..99_999_999)), "key-#{case_index}-#{index}") }
       expected_outputs = outputs.map { |item| [BigDecimal(item.fetch(:value)).to_s("F"), "OP_CHECKSIG", item.fetch(:script_pub_key).fetch(:public_key)] }
       expected_inputs = inputs.map { |item| [item.fetch(:previous_transaction_id), item.fetch(:output_index), item.fetch(:script_sig)] }
       payload = JSON.generate(["transaction", expected_inputs, expected_outputs])

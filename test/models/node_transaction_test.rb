@@ -125,7 +125,7 @@ class NodeTransactionTest < ActiveSupport::TestCase
     sender = Node.create!
     receiver = Node.create!
     first = sender.create_transaction(transaction_attributes)
-    second = sender.create_transaction(transaction_attributes(value: "3"))
+    second = sender.create_transaction(transaction_attributes(previous_id: transactions(:second_previous).id, value: "3"))
 
     saved_second = second.attributes
     receipts = capture_receipts { sender.broadcast_transaction(first) }
